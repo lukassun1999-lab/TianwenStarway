@@ -1,0 +1,659 @@
+[
+ {
+  "id": "M42",
+  "name": "猎户座大星云",
+  "type": "nebula",
+  "ra": 83.8,
+  "dec": -5.4,
+  "mag": 4.0,
+  "const": "猎户座"
+ },
+ {
+  "id": "M43",
+  "name": "猎户座小星云",
+  "type": "nebula",
+  "ra": 83.9,
+  "dec": -5.3,
+  "mag": 9.0,
+  "const": "猎户座"
+ },
+ {
+  "id": "M78",
+  "name": "猎户座反射星云",
+  "type": "nebula",
+  "ra": 86.0,
+  "dec": 0.1,
+  "mag": 8.3,
+  "const": "猎户座"
+ },
+ {
+  "id": "NGC2237",
+  "name": "玫瑰星云",
+  "type": "nebula",
+  "ra": 97.0,
+  "dec": 11.9,
+  "mag": 9.0,
+  "const": "麒麟座"
+ },
+ {
+  "id": "NGC2264",
+  "name": "圣诞树星团",
+  "type": "open",
+  "ra": 100.2,
+  "dec": 9.9,
+  "mag": 3.9,
+  "const": "麒麟座"
+ },
+ {
+  "id": "M45",
+  "name": "昴星团（七姐妹）",
+  "type": "open",
+  "ra": 56.8,
+  "dec": 24.1,
+  "mag": 1.6,
+  "const": "金牛座"
+ },
+ {
+  "id": "M1",
+  "name": "蟹状星云",
+  "type": "planetary",
+  "ra": 83.6,
+  "dec": 22.0,
+  "mag": 8.4,
+  "const": "金牛座"
+ },
+ {
+  "id": "NGC1647",
+  "name": "金牛座疏散星团",
+  "type": "open",
+  "ra": 71.3,
+  "dec": 19.1,
+  "mag": 6.4,
+  "const": "金牛座"
+ },
+ {
+  "id": "M35",
+  "name": "双子座疏散星团",
+  "type": "open",
+  "ra": 92.3,
+  "dec": 24.3,
+  "mag": 5.3,
+  "const": "双子座"
+ },
+ {
+  "id": "M36",
+  "name": "御夫座疏散星团",
+  "type": "open",
+  "ra": 83.9,
+  "dec": 34.1,
+  "mag": 6.3,
+  "const": "御夫座"
+ },
+ {
+  "id": "M37",
+  "name": "御夫座疏散星团",
+  "type": "open",
+  "ra": 85.5,
+  "dec": 32.5,
+  "mag": 6.2,
+  "const": "御夫座"
+ },
+ {
+  "id": "M38",
+  "name": "御夫座疏散星团",
+  "type": "open",
+  "ra": 81.5,
+  "dec": 35.9,
+  "mag": 7.4,
+  "const": "御夫座"
+ },
+ {
+  "id": "M41",
+  "name": "小犬座疏散星团",
+  "type": "open",
+  "ra": 101.5,
+  "dec": -20.8,
+  "mag": 4.5,
+  "const": "大犬座"
+ },
+ {
+  "id": "NGC2362",
+  "name": "大犬座疏散星团",
+  "type": "open",
+  "ra": 109.7,
+  "dec": -24.9,
+  "mag": 4.1,
+  "const": "大犬座"
+ },
+ {
+  "id": "NGC3372",
+  "name": "船底座大星云",
+  "type": "nebula",
+  "ra": 161.3,
+  "dec": -59.9,
+  "mag": 1.0,
+  "const": "船底座"
+ },
+ {
+  "id": "NGC4755",
+  "name": "南十字座珠宝盒",
+  "type": "open",
+  "ra": 193.0,
+  "dec": -60.2,
+  "mag": 4.2,
+  "const": "南十字座"
+ },
+ {
+  "id": "M44",
+  "name": "蜂巢星团（鬼星团）",
+  "type": "open",
+  "ra": 130.1,
+  "dec": 19.7,
+  "mag": 3.7,
+  "const": "巨蟹座"
+ },
+ {
+  "id": "M67",
+  "name": "巨蟹座疏散星团",
+  "type": "open",
+  "ra": 132.8,
+  "dec": 11.8,
+  "mag": 6.9,
+  "const": "巨蟹座"
+ },
+ {
+  "id": "M65",
+  "name": "狮子座三重星系",
+  "type": "galaxy",
+  "ra": 168.7,
+  "dec": 13.1,
+  "mag": 9.3,
+  "const": "狮子座"
+ },
+ {
+  "id": "M66",
+  "name": "狮子座三重星系",
+  "type": "galaxy",
+  "ra": 169.5,
+  "dec": 13.0,
+  "mag": 8.9,
+  "const": "狮子座"
+ },
+ {
+  "id": "M95",
+  "name": "狮子座棒旋星系",
+  "type": "galaxy",
+  "ra": 172.1,
+  "dec": 11.7,
+  "mag": 9.7,
+  "const": "狮子座"
+ },
+ {
+  "id": "M96",
+  "name": "狮子座旋涡星系",
+  "type": "galaxy",
+  "ra": 172.4,
+  "dec": 11.8,
+  "mag": 9.2,
+  "const": "狮子座"
+ },
+ {
+  "id": "M87",
+  "name": "室女座超巨椭圆星系",
+  "type": "galaxy",
+  "ra": 187.7,
+  "dec": 12.4,
+  "mag": 8.6,
+  "const": "室女座"
+ },
+ {
+  "id": "M104",
+  "name": "草帽星系",
+  "type": "galaxy",
+  "ra": 190.0,
+  "dec": -11.6,
+  "mag": 8.0,
+  "const": "室女座"
+ },
+ {
+  "id": "M49",
+  "name": "室女座椭圆星系",
+  "type": "galaxy",
+  "ra": 187.4,
+  "dec": 8.0,
+  "mag": 8.4,
+  "const": "室女座"
+ },
+ {
+  "id": "M61",
+  "name": "室女座旋涡星系",
+  "type": "galaxy",
+  "ra": 185.5,
+  "dec": 4.5,
+  "mag": 9.7,
+  "const": "室女座"
+ },
+ {
+  "id": "M51",
+  "name": "漩涡星系（M51）",
+  "type": "galaxy",
+  "ra": 202.5,
+  "dec": 47.2,
+  "mag": 8.4,
+  "const": "猎犬座"
+ },
+ {
+  "id": "M63",
+  "name": "向日葵星系",
+  "type": "galaxy",
+  "ra": 198.9,
+  "dec": 42.0,
+  "mag": 8.6,
+  "const": "猎犬座"
+ },
+ {
+  "id": "M94",
+  "name": "猎犬座旋涡星系",
+  "type": "galaxy",
+  "ra": 192.7,
+  "dec": 41.1,
+  "mag": 8.2,
+  "const": "猎犬座"
+ },
+ {
+  "id": "M81",
+  "name": "波德星系",
+  "type": "galaxy",
+  "ra": 148.9,
+  "dec": 69.1,
+  "mag": 6.9,
+  "const": "大熊座"
+ },
+ {
+  "id": "M82",
+  "name": "雪茄星系",
+  "type": "galaxy",
+  "ra": 148.97,
+  "dec": 69.7,
+  "mag": 8.4,
+  "const": "大熊座"
+ },
+ {
+  "id": "M101",
+  "name": "风车星系",
+  "type": "galaxy",
+  "ra": 210.8,
+  "dec": 54.3,
+  "mag": 7.9,
+  "const": "大熊座"
+ },
+ {
+  "id": "M97",
+  "name": "猫头鹰星云",
+  "type": "planetary",
+  "ra": 168.7,
+  "dec": 55.0,
+  "mag": 9.9,
+  "const": "大熊座"
+ },
+ {
+  "id": "M108",
+  "name": "大熊座旋涡星系",
+  "type": "galaxy",
+  "ra": 168.3,
+  "dec": 55.7,
+  "mag": 10.0,
+  "const": "大熊座"
+ },
+ {
+  "id": "M109",
+  "name": "大熊座棒旋星系",
+  "type": "galaxy",
+  "ra": 179.4,
+  "dec": 53.4,
+  "mag": 9.8,
+  "const": "大熊座"
+ },
+ {
+  "id": "M13",
+  "name": "武仙座球状星团",
+  "type": "globular",
+  "ra": 250.4,
+  "dec": 36.5,
+  "mag": 5.8,
+  "const": "武仙座"
+ },
+ {
+  "id": "M92",
+  "name": "武仙座球状星团",
+  "type": "globular",
+  "ra": 259.3,
+  "dec": 43.1,
+  "mag": 6.4,
+  "const": "武仙座"
+ },
+ {
+  "id": "M57",
+  "name": "指环星云",
+  "type": "planetary",
+  "ra": 283.4,
+  "dec": 33.0,
+  "mag": 8.8,
+  "const": "天琴座"
+ },
+ {
+  "id": "M56",
+  "name": "天琴座球状星团",
+  "type": "globular",
+  "ra": 287.5,
+  "dec": 30.2,
+  "mag": 8.4,
+  "const": "天琴座"
+ },
+ {
+  "id": "M39",
+  "name": "天鹅座疏散星团",
+  "type": "open",
+  "ra": 323.4,
+  "dec": 48.4,
+  "mag": 4.6,
+  "const": "天鹅座"
+ },
+ {
+  "id": "M29",
+  "name": "天鹅座疏散星团",
+  "type": "open",
+  "ra": 303.6,
+  "dec": 38.5,
+  "mag": 6.6,
+  "const": "天鹅座"
+ },
+ {
+  "id": "NGC7000",
+  "name": "北美洲星云",
+  "type": "nebula",
+  "ra": 314.8,
+  "dec": 44.5,
+  "mag": 6.0,
+  "const": "天鹅座"
+ },
+ {
+  "id": "M27",
+  "name": "哑铃星云",
+  "type": "planetary",
+  "ra": 299.9,
+  "dec": 22.7,
+  "mag": 7.4,
+  "const": "狐狸座"
+ },
+ {
+  "id": "M71",
+  "name": "天箭座球状星团",
+  "type": "globular",
+  "ra": 298.4,
+  "dec": 18.8,
+  "mag": 8.2,
+  "const": "天箭座"
+ },
+ {
+  "id": "M8",
+  "name": "礁湖星云",
+  "type": "nebula",
+  "ra": 271.1,
+  "dec": -24.4,
+  "mag": 6.0,
+  "const": "人马座"
+ },
+ {
+  "id": "M20",
+  "name": "三裂星云",
+  "type": "nebula",
+  "ra": 270.6,
+  "dec": -23.0,
+  "mag": 6.3,
+  "const": "人马座"
+ },
+ {
+  "id": "M17",
+  "name": "欧米伽星云",
+  "type": "nebula",
+  "ra": 275.2,
+  "dec": -16.2,
+  "mag": 6.0,
+  "const": "人马座"
+ },
+ {
+  "id": "M16",
+  "name": "鹰状星云",
+  "type": "nebula",
+  "ra": 274.7,
+  "dec": -13.8,
+  "mag": 6.4,
+  "const": "巨蛇座"
+ },
+ {
+  "id": "M22",
+  "name": "人马座球状星团",
+  "type": "globular",
+  "ra": 279.1,
+  "dec": -23.9,
+  "mag": 5.1,
+  "const": "人马座"
+ },
+ {
+  "id": "M55",
+  "name": "人马座球状星团",
+  "type": "globular",
+  "ra": 294.9,
+  "dec": -30.9,
+  "mag": 6.3,
+  "const": "人马座"
+ },
+ {
+  "id": "M69",
+  "name": "人马座球状星团",
+  "type": "globular",
+  "ra": 274.3,
+  "dec": -32.3,
+  "mag": 7.6,
+  "const": "人马座"
+ },
+ {
+  "id": "M6",
+  "name": "蝴蝶星团",
+  "type": "open",
+  "ra": 266.1,
+  "dec": -32.2,
+  "mag": 4.2,
+  "const": "天蝎座"
+ },
+ {
+  "id": "M7",
+  "name": "托勒密星团",
+  "type": "open",
+  "ra": 268.5,
+  "dec": -34.8,
+  "mag": 3.3,
+  "const": "天蝎座"
+ },
+ {
+  "id": "M4",
+  "name": "天蝎座球状星团",
+  "type": "globular",
+  "ra": 245.9,
+  "dec": -26.5,
+  "mag": 5.6,
+  "const": "天蝎座"
+ },
+ {
+  "id": "M80",
+  "name": "天蝎座球状星团",
+  "type": "globular",
+  "ra": 244.3,
+  "dec": -22.98,
+  "mag": 7.3,
+  "const": "天蝎座"
+ },
+ {
+  "id": "M10",
+  "name": "蛇夫座球状星团",
+  "type": "globular",
+  "ra": 254.3,
+  "dec": -4.1,
+  "mag": 6.6,
+  "const": "蛇夫座"
+ },
+ {
+  "id": "M12",
+  "name": "蛇夫座球状星团",
+  "type": "globular",
+  "ra": 251.8,
+  "dec": -1.9,
+  "mag": 6.7,
+  "const": "蛇夫座"
+ },
+ {
+  "id": "M2",
+  "name": "宝瓶座球状星团",
+  "type": "globular",
+  "ra": 323.4,
+  "dec": -0.8,
+  "mag": 6.5,
+  "const": "宝瓶座"
+ },
+ {
+  "id": "M72",
+  "name": "宝瓶座球状星团",
+  "type": "globular",
+  "ra": 314.4,
+  "dec": -12.5,
+  "mag": 9.3,
+  "const": "宝瓶座"
+ },
+ {
+  "id": "M73",
+  "name": "宝瓶座小星群",
+  "type": "open",
+  "ra": 315.3,
+  "dec": -12.6,
+  "mag": 8.9,
+  "const": "宝瓶座"
+ },
+ {
+  "id": "NGC7293",
+  "name": "螺旋星云",
+  "type": "planetary",
+  "ra": 337.4,
+  "dec": -20.8,
+  "mag": 7.3,
+  "const": "宝瓶座"
+ },
+ {
+  "id": "M31",
+  "name": "仙女座星系",
+  "type": "galaxy",
+  "ra": 10.7,
+  "dec": 41.3,
+  "mag": 3.4,
+  "const": "仙女座"
+ },
+ {
+  "id": "M32",
+  "name": "仙女座伴星系",
+  "type": "galaxy",
+  "ra": 10.7,
+  "dec": 40.9,
+  "mag": 8.1,
+  "const": "仙女座"
+ },
+ {
+  "id": "M110",
+  "name": "仙女座伴星系",
+  "type": "galaxy",
+  "ra": 10.1,
+  "dec": 41.7,
+  "mag": 8.1,
+  "const": "仙女座"
+ },
+ {
+  "id": "M33",
+  "name": "三角座星系",
+  "type": "galaxy",
+  "ra": 23.5,
+  "dec": 30.7,
+  "mag": 5.7,
+  "const": "三角座"
+ },
+ {
+  "id": "M15",
+  "name": "飞马座球状星团",
+  "type": "globular",
+  "ra": 322.5,
+  "dec": 12.2,
+  "mag": 6.2,
+  "const": "飞马座"
+ },
+ {
+  "id": "M34",
+  "name": "英仙座疏散星团",
+  "type": "open",
+  "ra": 40.5,
+  "dec": 42.8,
+  "mag": 5.5,
+  "const": "英仙座"
+ },
+ {
+  "id": "NGC869",
+  "name": "双星团（h）",
+  "type": "open",
+  "ra": 34.8,
+  "dec": 57.1,
+  "mag": 3.7,
+  "const": "英仙座"
+ },
+ {
+  "id": "NGC884",
+  "name": "双星团（chi）",
+  "type": "open",
+  "ra": 35.5,
+  "dec": 57.1,
+  "mag": 4.0,
+  "const": "英仙座"
+ },
+ {
+  "id": "M76",
+  "name": "小哑铃星云",
+  "type": "planetary",
+  "ra": 25.6,
+  "dec": 51.6,
+  "mag": 10.1,
+  "const": "英仙座"
+ },
+ {
+  "id": "NGC5128",
+  "name": "半人马座 A 星系",
+  "type": "galaxy",
+  "ra": 201.4,
+  "dec": -43.0,
+  "mag": 6.8,
+  "const": "半人马座"
+ },
+ {
+  "id": "NGC5139",
+  "name": "半人马座欧米伽球状星团",
+  "type": "globular",
+  "ra": 201.7,
+  "dec": -47.5,
+  "mag": 3.9,
+  "const": "半人马座"
+ },
+ {
+  "id": "NGC6543",
+  "name": "猫眼星云",
+  "type": "planetary",
+  "ra": 269.6,
+  "dec": 66.6,
+  "mag": 8.1,
+  "const": "天龙座"
+ }
+]

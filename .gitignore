@@ -1,0 +1,16 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# ---- 密钥 / 环境变量（禁止提交，改用 Cloud Studio 环境变量注入）----
+.env
+.env.*
+!.env.example
+
+# ---- 运行产物 ----
+*.log
+backend_out.txt
+backend_err.txt
+src/backend/data/sessions/
