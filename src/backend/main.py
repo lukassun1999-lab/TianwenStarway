@@ -70,12 +70,28 @@ async def health():
     return {"status": "ok"}
 
 
+# MiniMax speech-2.8-hd 可用音色白名单（双导师用不同音色区分）
+TTS_VOICE_WHITELIST = {
+    "Chinese (Mandarin)_Gentleman",      # 温润男声（开普勒·严谨）
+    "audiobook_male_1",                  # 有声书男声1（甘德·随和自然）
+    "Chinese (Mandarin)_Radio_Host",
+    "male-qn-jingying",
+    "female-yujie",
+    "female-shaonv",
+    "Chinese (Mandarin)_News_Anchor",
+    "Chinese (Mandarin)_Warm_Girl",
+}
+
+
 @app.post("/api/tts")
 async def text_to_speech(request: Request):
     body = await request.json()
     text = body.get("text", "")
     if not text:
         raise HTTPException(status_code=400, detail="缺少 text 参数")
+    voice_id = body.get("voice_id", "female-yujie")
+    if voice_id not in TTS_VOICE_WHITELIST:
+        voice_id = "female-yujie"
 
     api_key = LLM_API_KEY
     if not api_key:
@@ -95,7 +111,7 @@ async def text_to_speech(request: Request):
                     "stream": False,
                     "output_format": "hex",
                     "voice_setting": {
-                        "voice_id": "female-yujie",
+                        "voice_id": voice_id,
                         "speed": 1.0,
                         "vol": 1,
                         "pitch": 0

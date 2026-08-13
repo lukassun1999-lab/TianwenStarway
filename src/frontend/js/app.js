@@ -2447,6 +2447,13 @@ function setupEventListeners() {
         });
     }
 
+    // 背景音乐开关
+    const bgmToggleBtn = document.getElementById('bgm-toggle-btn');
+    if (bgmToggleBtn) {
+        bgmToggleBtn.addEventListener('click', toggleBgm);
+        updateBgmButton();
+    }
+
     // ---- 地面观星 ----
     const observeBtn = document.getElementById('observe-btn');
     const observeSettings = document.getElementById('observe-settings');
@@ -3224,6 +3231,170 @@ let typewriterState = {
     onComplete: null
 };
 
+// ==================== 语音朗读（MiniMax TTS） ====================
+// 双导师用不同音色区分（均为年长音色）：开普勒=温润男声（严谨），甘德=有声书男声1（随和自然）
+const MENTOR_VOICES = {
+    science: 'Chinese (Mandarin)_Gentleman',
+    culture: 'audiobook_male_1'
+};
+
+let ttsCtx = null;
+let ttsSource = null;
+let ttsSeq = 0; // 序号防竞态：切段/关闭后，迟到的音频不再播放
+
+// 去掉 Markdown 符号，避免把 **、# 之类读出来
+function cleanTtsText(text) {
+    return String(text || '')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/[*_#>`~]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function ensureTtsContext() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!ttsCtx) ttsCtx = new AC();
+    if (ttsCtx.state === 'suspended') ttsCtx.resume().catch(() => {});
+    return ttsCtx;
+}
+
+// 浏览器自动播放策略：页面任意一次点击即解锁音频上下文，并开始背景音乐
+document.addEventListener('pointerdown', () => { ensureTtsContext(); startBgm(); }, { once: true });
+
+function stopTts() {
+    ttsSeq++;
+    if (ttsSource) {
+        try { ttsSource.stop(); } catch (e) { /* 已停止 */ }
+        ttsSource = null;
+    }
+    fadeBgmTo(BGM_VOLUME);
+}
+
+async function playTts(text, voiceId) {
+    text = cleanTtsText(text);
+    if (window.__testMode === true || !text) return;
+    const ctx = ensureTtsContext();
+    if (!ctx) return;
+    const seq = ++ttsSeq;
+    if (ttsSource) {
+        try { ttsSource.stop(); } catch (e) { /* 已停止 */ }
+        ttsSource = null;
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice_id: voiceId })
+        });
+        if (!resp.ok || seq !== ttsSeq) return;
+        const data = await resp.json();
+        if (!data.audio_base64 || seq !== ttsSeq) return;
+        const bytes = Uint8Array.from(atob(data.audio_base64), c => c.charCodeAt(0));
+        const buffer = await ctx.decodeAudioData(bytes.buffer);
+        if (seq !== ttsSeq) return;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.onended = () => {
+            if (ttsSource === source) {
+                ttsSource = null;
+                fadeBgmTo(BGM_VOLUME);
+            }
+        };
+        source.start();
+        ttsSource = source;
+        fadeBgmTo(BGM_DUCK_VOLUME);
+    } catch (e) {
+        // 朗读是增强能力：失败不阻塞文字对话
+    }
+}
+
+// ==================== 背景音乐 ====================
+const BGM_SRC = 'assets/bgm.mp3';
+const BGM_VOLUME = 0.3;       // 常态音量（轻柔，不盖过朗读）
+const BGM_DUCK_VOLUME = 0.08; // 导师朗读时压低的音量
+let bgmEl = null;
+let bgmAvailable = true;      // false = 音频文件缺失/加载失败，隐藏开关
+let bgmFadeTimer = null;
+
+function isBgmEnabled() {
+    return localStorage.getItem('tianwen_bgm_enabled') !== '0';
+}
+
+function getBgmEl() {
+    if (!bgmEl) {
+        bgmEl = new Audio(BGM_SRC);
+        bgmEl.loop = true;
+        bgmEl.volume = BGM_VOLUME;
+        bgmEl.preload = 'auto';
+    }
+    return bgmEl;
+}
+
+function updateBgmButton() {
+    const btn = document.getElementById('bgm-toggle-btn');
+    if (!btn) return;
+    if (!bgmAvailable) {
+        btn.style.display = 'none';
+        return;
+    }
+    btn.style.display = '';
+    btn.textContent = isBgmEnabled() ? '🎵 音乐' : '🔇 静音';
+    btn.setAttribute('aria-pressed', String(isBgmEnabled()));
+}
+
+/** 页面首次用户交互时启动 BGM（浏览器禁止交互前发声） */
+function startBgm() {
+    if (window.__testMode === true || !bgmAvailable) return;
+    updateBgmButton();
+    if (!isBgmEnabled()) return;
+    getBgmEl().play().catch(() => {
+        bgmAvailable = false;
+        updateBgmButton();
+    });
+}
+
+function toggleBgm() {
+    const enable = !isBgmEnabled();
+    localStorage.setItem('tianwen_bgm_enabled', enable ? '1' : '0');
+    if (enable) {
+        bgmAvailable = true;
+        getBgmEl().play().catch(() => {
+            bgmAvailable = false;
+            updateBgmButton();
+        });
+    } else if (bgmEl) {
+        bgmEl.pause();
+    }
+    updateBgmButton();
+}
+
+/** 音量平滑过渡（朗读开始压低 BGM，结束恢复） */
+function fadeBgmTo(target, duration = 500) {
+    if (!bgmEl) return;
+    if (bgmFadeTimer) cancelAnimationFrame(bgmFadeTimer);
+    const from = bgmEl.volume;
+    const start = performance.now();
+    function step(now) {
+        const t = Math.min(1, (now - start) / duration);
+        bgmEl.volume = from + (target - from) * t;
+        bgmFadeTimer = t < 1 ? requestAnimationFrame(step) : null;
+    }
+    bgmFadeTimer = requestAnimationFrame(step);
+}
+
+// 调试访问器（与 __debugView 同样约定，测试/排查用）
+window.__debugBgm = () => ({
+    enabled: isBgmEnabled(),
+    available: bgmAvailable,
+    playing: bgmEl ? !bgmEl.paused : false,
+    volume: bgmEl ? bgmEl.volume : null,
+    duration: bgmEl && isFinite(bgmEl.duration) ? bgmEl.duration : null,
+    src: BGM_SRC
+});
+
 // 初中版状态转换：后端 stage string -> 1-7
 function stageToNumber(stageValue) {
     // 五步循环：选星 1 → 开场 2 → 追问 3 → 融合 4 → 启示录 5
@@ -3863,6 +4034,9 @@ function showOverlayDialogue(scienceText, cultureText) {
         document.getElementById('dialogue-content').innerHTML = '';
         card.style.opacity = '1';
 
+        // 独白配音：打字机开始的同时朗读本段
+        playTts(para, MENTOR_VOICES[currentPhase]);
+
         // 打字开始就显示"继续"键（发光，点击跳过打字）
         const oldHint = document.getElementById('dialogue-next-hint');
         if (oldHint) oldHint.remove();
@@ -3908,6 +4082,7 @@ function showOverlayDialogue(scienceText, cultureText) {
 }
 
 function removeDialogueOverlay() {
+    stopTts();
     if (typewriterState.isTyping) {
         clearTimeout(typewriterState.timer);
         typewriterState.isTyping = false;
