@@ -1,5 +1,8 @@
-preview:
-  - port: 8080
-    command: cd src/backend && python -m uvicorn main:app --host 0.0.0.0 --port 8080
-    runOnLoad: true
-    main: true
+apps:
+  - name: 天问星途后端
+    port: 8080
+    root: .
+    run: cd src/backend && python -m uvicorn main:app --host 0.0.0.0 --port 8080
+    autoOpen: true
+    autoPreview: true
+    mainPort: true
