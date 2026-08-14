@@ -1364,6 +1364,42 @@
         }
 
         /* ============================================================
+           封面（点击任意位置进入下一阶段）
+           ============================================================ */
+        #cover-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10001;
+            background: #01040f;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity var(--dur-3) var(--ease-out);
+        }
+        #cover-overlay.fading { opacity: 0; pointer-events: none; }
+        #cover-image {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #cover-hint {
+            position: relative;
+            z-index: 1;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 1.15rem;
+            letter-spacing: 6px;
+            text-shadow: 0 0 20px rgba(74, 158, 255, 0.6);
+            animation: pulse 2s infinite;
+            padding-bottom: 14vh;
+        }
+        @media (max-width: 560px) {
+            #cover-hint { font-size: 0.95rem; letter-spacing: 4px; }
+        }
+
+        /* ============================================================
            开场视频遮罩（打开系统 2 秒后自动播放，可跳过）
            ============================================================ */
         #intro-video-overlay {
@@ -2299,7 +2335,13 @@
     </style>
 </head>
 <body>
-    <!-- 开场视频遮罩（打开系统 2 秒后自动播放） -->
+    <!-- 封面（用户点开首先映入眼帘，点击任意位置进入下一阶段） -->
+    <div id="cover-overlay">
+        <img id="cover-image" src="assets/cover.webp" alt="天问·星途">
+        <div id="cover-hint">✦ 点击任意位置，开启星途 ✦</div>
+    </div>
+
+    <!-- 开场视频遮罩（点击封面后：纯黑 5 秒 → 自动播放） -->
     <div id="intro-video-overlay" role="presentation">
         <div id="intro-video-loading">✦ 星途将启 ✦</div>
         <video id="intro-video" muted playsinline preload="auto" tabindex="-1">
@@ -2496,28 +2538,31 @@
     </script>
     <script type="module" src="js/app.js?v=20260813k"></script>
     <script>
-    // 开场视频：打开系统即纯黑背景，2 秒后自动播放，可点击跳过 / 开声音
+    // 开场流程：封面（点击任意位置）→ 纯黑 5 秒 → 视频 → 进入系统
     (function () {
+        const cover = document.getElementById('cover-overlay');
         const overlay = document.getElementById('intro-video-overlay');
         const video = document.getElementById('intro-video');
         const hint = document.getElementById('intro-video-hint');
         const skipBtn = document.getElementById('intro-video-skip');
         if (!overlay || !video) return;
 
-        // 测试模式：隐藏纯黑遮罩，直接进入系统
+        // 测试模式：隐藏封面与开场遮罩，直接进入系统
         if (window.__testMode === true) {
+            if (cover) cover.style.display = 'none';
             overlay.style.display = 'none';
             return;
         }
 
-        let started = false;
+        let playing = false;
         let soundOn = false;
         let finished = false;
+        let countdownTimer = null;
 
         function finish() {
             if (finished) return;
             finished = true;
-            clearTimeout(startTimer);
+            clearTimeout(countdownTimer);
             try { video.pause(); } catch (e) {}
             overlay.classList.add('fading');
             setTimeout(() => {
@@ -2525,15 +2570,44 @@
             }, 450);
         }
 
-        // 打开系统即纯黑背景，5 秒后自动播放
-        const startTimer = setTimeout(() => {
-            started = true;
+        // 纯黑 5 秒后自动播放视频
+        function startVideo() {
+            if (playing || finished) return;
+            playing = true;
             video.play().then(() => {
                 overlay.classList.add('playing');
             }).catch(() => {
                 finish(); // 播放失败直接进入系统，避免卡黑屏
             });
-        }, 5000);
+            // 视频开始后兜底：最多播放 25 秒
+            setTimeout(function () { if (playing && !finished) finish(); }, 25000);
+        }
+
+        // 封面：点击任意位置进入下一阶段（纯黑 5 秒 → 视频）
+        function dismissCover() {
+            if (!cover || cover.dataset.done) return;
+            cover.dataset.done = '1';
+            cover.classList.add('fading');
+            setTimeout(() => {
+                if (cover.parentNode) cover.parentNode.removeChild(cover);
+            }, 450);
+            countdownTimer = setTimeout(startVideo, 5000);
+        }
+        if (cover) {
+            cover.addEventListener('click', dismissCover);
+        } else {
+            countdownTimer = setTimeout(startVideo, 5000);
+        }
+
+        // 键盘：封面阶段按键 = 点击封面；视频阶段按键 = 跳过
+        document.addEventListener('keydown', function onKey() {
+            if (finished) return;
+            if (cover && cover.isConnected && !cover.dataset.done) {
+                dismissCover();
+            } else if (playing) {
+                finish();
+            }
+        });
 
         // 播放结束自动进入系统
         video.addEventListener('ended', finish);
@@ -2542,7 +2616,7 @@
 
         // 点击画面：开启 / 关闭声音（自动播放必须静音，点击后才可有声）
         overlay.addEventListener('click', function (e) {
-            if (e.target === skipBtn || !started || finished) return;
+            if (e.target === skipBtn || !playing || finished) return;
             soundOn = !soundOn;
             video.muted = !soundOn;
             if (hint) hint.textContent = soundOn ? '🔊 声音已开启' : '点击画面 开启声音';
@@ -2553,14 +2627,6 @@
             e.stopPropagation();
             finish();
         });
-
-        // 键盘任意键跳过
-        document.addEventListener('keydown', function onKey() {
-            if (started && !finished) finish();
-        });
-
-        // 兜底：25 秒后强制结束
-        setTimeout(function () { if (!finished) finish(); }, 25000);
     })();
     </script>
 </body>
