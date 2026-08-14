@@ -3958,6 +3958,13 @@ function showOverlayDialogue(scienceText, cultureText) {
     const overlay = document.createElement('div');
     overlay.id = 'dialogue-overlay';
 
+    // 导师头像：独立悬浮在对话框外，透明融入星空背景
+    const avatar = document.createElement('img');
+    avatar.id = 'dialogue-avatar';
+    avatar.src = 'assets/kepler-avatar.webp?v=2';
+    avatar.alt = '开普勒';
+    overlay.appendChild(avatar);
+
     const card = document.createElement('div');
     card.id = 'dialogue-card';
     card.innerHTML = `
@@ -3998,6 +4005,12 @@ function showOverlayDialogue(scienceText, cultureText) {
                 setTimeout(() => {
                     document.getElementById('chat-status').textContent = '甘德正在解读...';
                     document.getElementById('dialogue-agent').textContent = '📜 甘德';
+                    // 切换到甘德头像（金色光晕）
+                    const avatarEl = document.getElementById('dialogue-avatar');
+                    if (avatarEl) {
+                        avatarEl.src = 'assets/gander-avatar.webp?v=3';
+                        avatarEl.className = 'gander';
+                    }
                     card.className = 'dialogue-card-culture';
                     card.style.opacity = '1';
                     isAnimating = false;
@@ -4638,33 +4651,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 新手引导 - 多步骤
+    // 新手引导 - 单步（故事背景已由开场视频交代）
     const introOverlay = document.getElementById('intro-overlay');
-    let introStep = 0;
-    const introSteps = document.querySelectorAll('.intro-step');
-    const totalSteps = introSteps.length;
-
-    function showIntroStep(n) {
-        introSteps.forEach((s, i) => s.classList.toggle('active', i === n));
-        document.querySelectorAll('.intro-dot').forEach((d, i) => d.classList.toggle('active', i === n));
-        document.getElementById('intro-prev').style.display = n === 0 ? 'none' : 'inline-flex';
-        document.getElementById('intro-next').style.display = n === totalSteps - 1 ? 'none' : 'inline-flex';
-        document.getElementById('start-btn').style.display = n === totalSteps - 1 ? 'inline-flex' : 'none';
-    }
-
-    document.getElementById('intro-next').addEventListener('click', () => {
-        if (introStep < totalSteps - 1) {
-            introStep++;
-            showIntroStep(introStep);
-        }
-    });
-
-    document.getElementById('intro-prev').addEventListener('click', () => {
-        if (introStep > 0) {
-            introStep--;
-            showIntroStep(introStep);
-        }
-    });
 
     const startBtn = document.getElementById('start-btn');
     if (startBtn) {
@@ -4685,8 +4673,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.__skipIntro) {
         introOverlay.classList.add('hidden');
-    } else {
-        showIntroStep(0);
     }
 
     // 发送按钮
