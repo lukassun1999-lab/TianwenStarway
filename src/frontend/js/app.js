@@ -729,6 +729,7 @@ function selectStar(star, triggerEl) {
 
     // 设置搜索框并触发探索
     state.currentStar = star;
+    state.currentStarId = star.id;  // 修复：确保后续请求使用当前选中星
     showStarInfo(star);
     focusOnStar(star);
     const searchInput = document.getElementById('star-search');
@@ -789,6 +790,7 @@ function renderChapterNav() {
                     document.querySelectorAll('.chapter-star-btn.selected').forEach(s => s.classList.remove('selected'));
                     btn.classList.add('selected');
                     state.currentStar = null;
+                    state.currentStarId = btn.dataset.star;  // 修复：记录当前档案星 ID
                     const searchInput = document.getElementById('star-search');
                     searchInput.value = profile.name_cn;
                     sendMessage(profile.name_cn);
@@ -4662,6 +4664,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const polaris = state.starCatalog.find(s => s.name_en === 'Polaris' || s.hr === 424);
             if (polaris) {
                 state.currentStar = polaris;
+                state.currentStarId = 'polaris';  // 修复：与发送的星保持一致
                 showStarInfo(polaris);
                 focusOnStar(polaris);
                 const searchInput = document.getElementById('star-search');
