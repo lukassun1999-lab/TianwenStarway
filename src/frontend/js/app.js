@@ -4608,6 +4608,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // 聊天面板收起/展开：收起后只留标题栏，星空占满屏幕
+    const chatCollapseBtn = document.getElementById('chat-collapse-btn');
+    if (chatCollapseBtn) {
+        chatCollapseBtn.addEventListener('click', () => {
+            const collapsed = document.body.classList.toggle('chat-collapsed');
+            chatCollapseBtn.textContent = collapsed ? '展开 ▴' : '收起 ▾';
+            chatCollapseBtn.title = collapsed ? '展开聊天记录' : '收起聊天记录';
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 300);
+        });
+    }
+
     // 成就徽章点击打开成就面板
     const achievementBadge = document.getElementById('achievement-badge');
     if (achievementBadge) {

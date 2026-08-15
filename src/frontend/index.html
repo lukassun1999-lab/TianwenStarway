@@ -791,12 +791,16 @@
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            flex: 1;
+            min-width: 0;
         }
 
         .map-badges {
             display: flex;
             gap: 8px;
-            margin-left: auto;
+            flex: 1;
+            justify-content: flex-end;
+            min-width: 0;
         }
 
         /* 玻璃拟态悬浮按钮（地图操作 / 频道 / 徽章共用基调） */
@@ -849,9 +853,6 @@
         }
 
         #channel-toggle {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
             display: flex;
             gap: 6px;
             padding: 4px;
@@ -860,6 +861,7 @@
             -webkit-backdrop-filter: blur(10px);
             border: 1px solid var(--line);
             border-radius: var(--r-pill);
+            flex-shrink: 0;
         }
 
         .channel-btn {
@@ -1047,6 +1049,26 @@
             color: var(--text-dim);
             text-align: right;
         }
+        #chat-collapse-btn {
+            flex-shrink: 0;
+            padding: 5px 14px;
+            background: rgba(74, 158, 255, 0.15);
+            border: 1px solid var(--line-science);
+            border-radius: var(--r-pill);
+            color: var(--science-strong);
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: background var(--dur-2) var(--ease-out);
+        }
+        #chat-collapse-btn:hover { background: rgba(74, 158, 255, 0.35); }
+
+        /* 收起聊天记录：只剩标题栏，星空占满 */
+        body.chat-collapsed #chat-panel { max-height: 50px; }
+        body.chat-collapsed #chat-messages,
+        body.chat-collapsed #question-toggle-btn,
+        body.chat-collapsed #question-input-area,
+        body.chat-collapsed #quiz-panel,
+        body.chat-collapsed #awaken-input-area { display: none; }
 
         /* 对话区域 - 单卡片轮播 */
         #chat-messages {
@@ -2284,6 +2306,7 @@
             #chat-header { padding: 8px 16px; }
             #chat-header h2 { font-size: 0.92rem; }
             #chat-header p { font-size: 0.72rem; }
+            #chat-collapse-btn { padding: 4px 10px; font-size: 0.75rem; }
 
             .message-card { padding: 16px; }
             .message-card .content { font-size: 0.96rem; line-height: 1.8; }
@@ -2484,6 +2507,7 @@
             <div id="chat-header">
                 <h2>星辰档案库</h2>
                 <p id="chat-status" aria-live="polite">等待守夜人的指令...</p>
+                <button type="button" id="chat-collapse-btn" title="收起聊天记录" aria-label="收起聊天记录">收起 ▾</button>
             </div>
             <div id="chat-messages" role="log" aria-live="polite" aria-label="星辰档案消息">
                 <div class="message-card culture" id="welcome-card">
@@ -2536,7 +2560,7 @@
         }
     }
     </script>
-    <script type="module" src="js/app.js?v=20260813l"></script>
+    <script type="module" src="js/app.js?v=20260813m"></script></script>
     <script>
     // 开场流程：封面（点击任意位置）→ 纯黑 5 秒 → 视频 → 进入系统
     (function () {
