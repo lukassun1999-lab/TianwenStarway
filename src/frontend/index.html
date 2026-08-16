@@ -1400,22 +1400,26 @@
             transition: opacity var(--dur-3) var(--ease-out);
         }
         #cover-overlay.fading { opacity: 0; pointer-events: none; }
-        #cover-image {
+        #cover-starfield {
             position: absolute;
             inset: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            display: block;
         }
         #cover-hint {
-            position: relative;
+            position: absolute;
+            bottom: 6vh;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1;
             color: rgba(255, 255, 255, 0.85);
             font-size: 1.15rem;
             letter-spacing: 6px;
             text-shadow: 0 0 20px rgba(74, 158, 255, 0.6);
             animation: pulse 2s infinite;
-            padding-bottom: 14vh;
+            pointer-events: none;
+            white-space: nowrap;
         }
         @media (max-width: 560px) {
             #cover-hint { font-size: 0.95rem; letter-spacing: 4px; }
@@ -2358,10 +2362,10 @@
     </style>
 </head>
 <body>
-    <!-- 封面（用户点开首先映入眼帘，点击任意位置进入下一阶段） -->
+    <!-- 封面（星空穿越动画，自动播放 10 秒后进入视频；点击可提前进入） -->
     <div id="cover-overlay">
-        <img id="cover-image" src="assets/cover.webp" alt="天问·星途">
-        <div id="cover-hint">✦ 点击任意位置，开启星途 ✦</div>
+        <canvas id="cover-starfield"></canvas>
+        <div id="cover-hint">✦ 点击任意位置，提前开启星途 ✦</div>
     </div>
 
     <!-- 开场视频遮罩（点击封面后：纯黑 5 秒 → 自动播放） -->
@@ -2560,9 +2564,10 @@
         }
     }
     </script>
-    <script type="module" src="js/app.js?v=20260813m"></script></script>
+    <script type="module" src="js/starfield-intro.js?v=20260816"></script>
+    <script type="module" src="js/app.js?v=20260813m"></script>
     <script>
-    // 开场流程：封面（点击任意位置）→ 纯黑 5 秒 → 视频 → 进入系统
+    // 开场流程：星空封面（自动 10 秒，可点击提前）→ 视频 → 进入系统
     (function () {
         const cover = document.getElementById('cover-overlay');
         const overlay = document.getElementById('intro-video-overlay');
@@ -2581,12 +2586,12 @@
         let playing = false;
         let soundOn = false;
         let finished = false;
-        let countdownTimer = null;
+        let coverTimer = null;
 
         function finish() {
             if (finished) return;
             finished = true;
-            clearTimeout(countdownTimer);
+            clearTimeout(coverTimer);
             try { video.pause(); } catch (e) {}
             overlay.classList.add('fading');
             setTimeout(() => {
@@ -2594,7 +2599,7 @@
             }, 450);
         }
 
-        // 纯黑 5 秒后自动播放视频
+        // 播放视频（视频已在星空封面阶段预加载）
         function startVideo() {
             if (playing || finished) return;
             playing = true;
@@ -2607,27 +2612,40 @@
             setTimeout(function () { if (playing && !finished) finish(); }, 25000);
         }
 
-        // 封面：点击任意位置进入下一阶段（纯黑 5 秒 → 视频）
-        function dismissCover() {
+        // 结束星空封面 → 淡出并进入视频
+        function enterVideo() {
             if (!cover || cover.dataset.done) return;
             cover.dataset.done = '1';
             cover.classList.add('fading');
             setTimeout(() => {
                 if (cover.parentNode) cover.parentNode.removeChild(cover);
             }, 450);
-            countdownTimer = setTimeout(startVideo, 5000);
+            // 停止星空动画，释放性能
+            if (typeof window.__stopStarfield === 'function') {
+                try { window.__stopStarfield(); } catch (e) {}
+            }
+            startVideo();
         }
+
+        // 封面：自动 10 秒后进入视频
         if (cover) {
-            cover.addEventListener('click', dismissCover);
+            // 打开即开始预加载视频（后台 buffering），10 秒封面动画时间用于加载
+            video.load();
+            coverTimer = setTimeout(enterVideo, 10000);
+            // 点击封面：提前进入视频（排除拖拽旋转操作）
+            cover.addEventListener('click', function () {
+                if (window.__starfieldDragged) return;
+                enterVideo();
+            });
         } else {
-            countdownTimer = setTimeout(startVideo, 5000);
+            coverTimer = setTimeout(startVideo, 5000);
         }
 
         // 键盘：封面阶段按键 = 点击封面；视频阶段按键 = 跳过
         document.addEventListener('keydown', function onKey() {
             if (finished) return;
             if (cover && cover.isConnected && !cover.dataset.done) {
-                dismissCover();
+                enterVideo();
             } else if (playing) {
                 finish();
             }
