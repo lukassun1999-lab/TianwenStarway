@@ -1,0 +1,21 @@
+[Unit]
+Description=Tianwen Starway API (FastAPI + Uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 按服务器实际部署路径修改（git clone 到的位置）
+# 注：本项目服务器上实际部署在 /root/TianwenStarway（根目录权限 700，www-data 无法进入），
+# 故以 root 运行（与之前 nohup 裸进程一致）。若 clone 到 /opt 等可进入路径可改回 www-data。
+WorkingDirectory=/root/TianwenStarway/src/backend
+# .env 由 EnvironmentFile 加载（config.py 经 python-dotenv 读取，路径需可访问）
+EnvironmentFile=/root/TianwenStarway/src/backend/.env
+ExecStart=/root/TianwenStarway/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
