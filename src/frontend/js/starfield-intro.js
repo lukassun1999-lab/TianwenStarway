@@ -1,11 +1,12 @@
 /**
- * 开场星空封面动画（替代静态封面图）
- * 自动播放 10 秒后进入视频；用户点击可提前进入。
+ * 开场星座穿越封面动画（替代上一版星空封面）
+ * 来源：constellation.html —— 多彩星轨 + 星云 + 远景闪烁 + 五座星座（逐星连线触发）
+ * 自动播放 10 秒后进入视频；用户点击可提前进入（拖拽旋转不算点击）。
  * 使用 index.html 中已配置的 importmap（three@0.160.0）。
  */
 import * as THREE from 'three';
 
-// 找到封面容器内的 canvas
+// 找到封面容器内的 canvas（项目 index.html 中位于 #cover-overlay 内）
 const canvas = document.getElementById('cover-starfield');
 const overlay = document.getElementById('cover-overlay');
 
@@ -20,34 +21,17 @@ if (canvas && overlay && window.__testMode !== true) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x010208);
-    const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 6000);
+    scene.background = new THREE.Color(0x010209);
+    const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 9000);
     camera.position.set(0, 0, 0);
 
-    // ---------- 近处星星：线段拖尾 ----------
-    const FIELD = { count: 2200, width: 900, height: 600, depth: 2200 };
-    let speed = 260;
-    let speedTarget = 260;
-    let paused = false;
-
-    const streakGeo = new THREE.BufferGeometry();
-    const sPos = new Float32Array(FIELD.count * 2 * 3);
-    const sCol = new Float32Array(FIELD.count * 2 * 3);
-    const starX = new Float32Array(FIELD.count);
-    const starY = new Float32Array(FIELD.count);
-    const starZ = new Float32Array(FIELD.count);
-
+    // ---------- 多彩调色板 ----------
     const PALETTE = [
-        { c: [1.00, 1.00, 1.00], w: 34 },
-        { c: [0.62, 0.76, 1.00], w: 16 },
-        { c: [0.45, 0.60, 1.00], w: 8 },
-        { c: [1.00, 0.86, 0.62], w: 12 },
-        { c: [1.00, 0.68, 0.42], w: 7 },
-        { c: [1.00, 0.52, 0.52], w: 6 },
-        { c: [0.72, 1.00, 0.86], w: 5 },
-        { c: [0.86, 0.68, 1.00], w: 6 },
-        { c: [1.00, 0.68, 0.92], w: 4 },
-        { c: [0.62, 1.00, 1.00], w: 2 },
+        { c: [1.00, 1.00, 1.00], w: 36 }, { c: [0.62, 0.76, 1.00], w: 18 },
+        { c: [0.45, 0.60, 1.00], w: 8 }, { c: [1.00, 0.86, 0.62], w: 14 },
+        { c: [1.00, 0.68, 0.42], w: 7 }, { c: [1.00, 0.52, 0.52], w: 5 },
+        { c: [0.72, 1.00, 0.86], w: 4 }, { c: [0.86, 0.68, 1.00], w: 5 },
+        { c: [1.00, 0.68, 0.92], w: 3 },
     ];
     const PALETTE_TOTAL = PALETTE.reduce((s, p) => s + p.w, 0);
     function starColor() {
@@ -55,108 +39,85 @@ if (canvas && overlay && window.__testMode !== true) {
         for (const p of PALETTE) { r -= p.w; if (r <= 0) return p.c; }
         return PALETTE[0].c;
     }
-    function resetStar(i, randomZ = true) {
+
+    // ---------- 共享星星着色器（透视大小 + 闪烁 + 整体透明度） ----------
+    const starVert = /* glsl */`
+        attribute float aPhase;
+        attribute float aFreq;
+        attribute float aSize;
+        attribute vec3  aTint;
+        uniform float uTime;
+        uniform float uPixelRatio;
+        varying float vAlpha;
+        varying vec3  vTint;
+        void main() {
+            float tw  = sin(uTime * aFreq + aPhase);
+            float tw2 = sin(uTime * aFreq * 0.41 + aPhase * 1.9);
+            vAlpha = 0.45 + 0.55 * pow(0.5 + 0.5 * tw * (0.7 + 0.3 * tw2), 2.0);
+            vTint  = aTint;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = aSize * uPixelRatio * (320.0 / -mv.z) * (0.85 + 0.3 * tw);
+            gl_Position = projectionMatrix * mv;
+        }`;
+    const starFrag = /* glsl */`
+        uniform float uOpacity;
+        varying float vAlpha;
+        varying vec3  vTint;
+        void main() {
+            vec2 d = gl_PointCoord - 0.5;
+            float r = length(d);
+            if (r > 0.5) discard;
+            float glow = smoothstep(0.5, 0.0, r);
+            glow *= glow;
+            gl_FragColor = vec4(vTint, vAlpha * glow * uOpacity);
+        }`;
+
+    // =====================================================================
+    //  一、星轨拖尾层（运动跟随相机速度）
+    // =====================================================================
+    const FIELD = { count: 2000, width: 900, height: 600, depth: 2200 };
+    const streakGeo = new THREE.BufferGeometry();
+    const sPos = new Float32Array(FIELD.count * 2 * 3);
+    const sCol = new Float32Array(FIELD.count * 2 * 3);
+    const starX = new Float32Array(FIELD.count);
+    const starY = new Float32Array(FIELD.count);
+    const starZ = new Float32Array(FIELD.count);
+    const starCols = new Float32Array(FIELD.count * 3);
+
+    for (let i = 0; i < FIELD.count; i++) {
         starX[i] = (Math.random() * 2 - 1) * FIELD.width;
         starY[i] = (Math.random() * 2 - 1) * FIELD.height;
-        starZ[i] = randomZ ? -Math.random() * FIELD.depth : -FIELD.depth - Math.random() * 200;
-    }
-    const starCols = new Float32Array(FIELD.count * 3);
-    for (let i = 0; i < FIELD.count; i++) {
-        resetStar(i);
+        starZ[i] = -Math.random() * FIELD.depth;
         const c = starColor();
         sCol.set([...c, c[0] * 0.15, c[1] * 0.15, c[2] * 0.15], i * 6);
         starCols.set(c, i * 3);
     }
     streakGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
     streakGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
-    const streaks = new THREE.LineSegments(
-        streakGeo,
-        new THREE.LineBasicMaterial({
-            vertexColors: true, transparent: true, opacity: 1.0,
-            blending: THREE.AdditiveBlending, depthWrite: false,
-        })
-    );
+    const streaks = new THREE.LineSegments(streakGeo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 1.0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
     streaks.frustumCulled = false;
     scene.add(streaks);
 
-    // 近处星星头部点光斑
     const headGeo = new THREE.BufferGeometry();
     const hPos = new Float32Array(FIELD.count * 3);
     const hCol = new Float32Array(FIELD.count * 3);
     hCol.set(starCols);
     headGeo.setAttribute('position', new THREE.BufferAttribute(hPos, 3));
     headGeo.setAttribute('color', new THREE.BufferAttribute(hCol, 3));
-    const headMat = new THREE.PointsMaterial({
+    const heads = new THREE.Points(headGeo, new THREE.PointsMaterial({
         vertexColors: true, size: 2.6, sizeAttenuation: false,
         transparent: true, opacity: 0.85,
         blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const heads = new THREE.Points(headGeo, headMat);
+    }));
     heads.frustumCulled = false;
     scene.add(heads);
 
-    // ---------- 远处星空：闪烁 ----------
-    const FAR = { count: 3200, radius: 4200 };
-    const farGeo = new THREE.BufferGeometry();
-    const fPos = new Float32Array(FAR.count * 3);
-    const fPhase = new Float32Array(FAR.count);
-    const fFreq = new Float32Array(FAR.count);
-    const fSize = new Float32Array(FAR.count);
-    const fTint = new Float32Array(FAR.count * 3);
-    for (let i = 0; i < FAR.count; i++) {
-        const u = Math.random() * 2 - 1;
-        const th = Math.random() * Math.PI * 2;
-        const s = Math.sqrt(1 - u * u);
-        fPos.set([s * Math.cos(th) * FAR.radius, s * Math.sin(th) * FAR.radius, u * FAR.radius], i * 3);
-        fPhase[i] = Math.random() * Math.PI * 2;
-        fFreq[i] = 0.4 + Math.random() * 2.4;
-        fSize[i] = 1.2 + Math.random() * Math.random() * 3.2;
-        const c = starColor();
-        fTint.set(c, i * 3);
-    }
-    farGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
-    farGeo.setAttribute('aPhase', new THREE.BufferAttribute(fPhase, 1));
-    farGeo.setAttribute('aFreq', new THREE.BufferAttribute(fFreq, 1));
-    farGeo.setAttribute('aSize', new THREE.BufferAttribute(fSize, 1));
-    farGeo.setAttribute('aTint', new THREE.BufferAttribute(fTint, 3));
-    const farMat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() } },
-        vertexShader: `
-            attribute float aPhase;
-            attribute float aFreq;
-            attribute float aSize;
-            attribute vec3  aTint;
-            uniform float uTime;
-            uniform float uPixelRatio;
-            varying float vAlpha;
-            varying vec3  vTint;
-            void main() {
-              float tw = sin(uTime * aFreq + aPhase);
-              float tw2 = sin(uTime * aFreq * 0.37 + aPhase * 1.7);
-              vAlpha = 0.25 + 0.75 * pow(0.5 + 0.5 * tw * (0.7 + 0.3 * tw2), 2.0);
-              vTint = aTint;
-              vec4 mv = modelViewMatrix * vec4(position, 1.0);
-              gl_PointSize = aSize * uPixelRatio * (0.8 + 0.4 * tw);
-              gl_Position = projectionMatrix * mv;
-            }`,
-        fragmentShader: `
-            varying float vAlpha;
-            varying vec3  vTint;
-            void main() {
-              vec2 d = gl_PointCoord - 0.5;
-              float r = length(d);
-              if (r > 0.5) discard;
-              float glow = smoothstep(0.5, 0.0, r);
-              glow *= glow;
-              gl_FragColor = vec4(vTint, vAlpha * glow);
-            }`,
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    });
-    const farStars = new THREE.Points(farGeo, farMat);
-    farStars.frustumCulled = false;
-    scene.add(farStars);
-
-    // ---------- 星云背景 ----------
+    // =====================================================================
+    //  二、星云层（8 团，跟随相机平移）
+    // =====================================================================
     function makeNebulaTexture(inner, mid) {
         const size = 256;
         const cv = document.createElement('canvas');
@@ -189,29 +150,189 @@ if (canvas && overlay && window.__testMode !== true) {
         { inner: 'rgba(250, 205, 100, 0.55)', mid: 'rgba(200, 140, 55, 0.30)', scale: 3200, dir: [-0.05, -1.00, 0.10] },
     ];
     const nebulae = [];
-    NEBULA_DEFS.forEach((def) => {
-        const mat = new THREE.SpriteMaterial({
+    for (const def of NEBULA_DEFS) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
             map: makeNebulaTexture(def.inner, def.mid),
             transparent: true, opacity: 0.9,
             blending: THREE.AdditiveBlending, depthWrite: false,
-        });
-        const sp = new THREE.Sprite(mat);
-        sp.position.copy(new THREE.Vector3(...def.dir).normalize().multiplyScalar(4500));
+        }));
+        sp.userData.dir = new THREE.Vector3(...def.dir).normalize().multiplyScalar(4500);
         sp.scale.setScalar(def.scale);
         sp.material.rotation = Math.random() * Math.PI * 2;
         sp.userData.rotSpeed = (Math.random() - 0.5) * 0.01;
         scene.add(sp);
         nebulae.push(sp);
-    });
+    }
 
-    // ---------- 标题牌 ----------
+    // =====================================================================
+    //  三、远景闪烁星层（跟随相机平移）
+    // =====================================================================
+    const farMat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uOpacity: { value: 0.8 } },
+        vertexShader: starVert, fragmentShader: starFrag,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const farPts = (() => {
+        const N = 1800;
+        const pos = new Float32Array(N * 3), phase = new Float32Array(N),
+            freq = new Float32Array(N), size = new Float32Array(N), tint = new Float32Array(N * 3);
+        for (let i = 0; i < N; i++) {
+            const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+            pos.set([s * Math.cos(th) * 5000, s * Math.sin(th) * 5000, u * 5000], i * 3);
+            phase[i] = Math.random() * Math.PI * 2;
+            freq[i] = 0.4 + Math.random() * 2.2;
+            size[i] = 25 + Math.random() * 50;
+            tint.set(starColor(), i * 3);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+        g.setAttribute('aFreq', new THREE.BufferAttribute(freq, 1));
+        g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+        g.setAttribute('aTint', new THREE.BufferAttribute(tint, 3));
+        const p = new THREE.Points(g, farMat);
+        p.frustumCulled = false;
+        scene.add(p);
+        return p;
+    })();
+
+    // =====================================================================
+    //  四、星座（纵深分布 + 逐星座触发连线）—— 本次升级重点
+    // =====================================================================
+    const CONSTELLATIONS = [
+        { name: '猎户座', en: 'ORION', depth: 750, off: [-220, 60], scale: 2.4,
+            stars: [[-40, 70, 1.2], [45, 65, 1.0], [5, 98, 0.8], [-14, -6, 1.1], [6, 0, 1.25], [27, 6, 1.1], [-32, -78, 0.9], [36, -72, 1.35]],
+            links: [[2, 0], [2, 1], [0, 3], [3, 4], [4, 5], [1, 5], [3, 6], [5, 7]] },
+        { name: '小熊座', en: 'URSA MINOR', depth: 1350, off: [260, -40], scale: 2.0,
+            stars: [[88, 58, 1.35], [56, 44, 0.8], [36, 26, 0.75], [12, 2, 0.9], [-24, -6, 1.0], [-14, -36, 0.95], [6, -28, 0.85]],
+            links: [[0, 1], [1, 2], [2, 3], [3, 6], [6, 5], [5, 4], [4, 3]] },
+        { name: '仙后座', en: 'CASSIOPEIA', depth: 1950, off: [-280, -120], scale: 2.2,
+            stars: [[-84, 18, 1.0], [-42, -14, 1.1], [0, 16, 1.15], [42, -8, 1.0], [84, 22, 1.05]],
+            links: [[0, 1], [1, 2], [2, 3], [3, 4]] },
+        { name: '天鹅座', en: 'CYGNUS', depth: 2550, off: [200, 160], scale: 2.3,
+            stars: [[0, 82, 1.2], [0, 4, 1.1], [0, -76, 0.95], [-74, 12, 1.0], [74, 6, 1.0], [24, -30, 0.7]],
+            links: [[0, 1], [1, 2], [3, 1], [1, 4], [2, 5]] },
+        { name: '狮子座', en: 'LEO', depth: 3150, off: [-60, -40], scale: 2.5,
+            stars: [[-8, 30, 1.3], [6, 52, 0.85], [26, 68, 0.8], [46, 62, 0.9], [52, 44, 0.8], [30, 34, 0.75], [-58, 8, 1.0], [-88, 26, 0.9], [-70, -16, 0.95]],
+            links: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [0, 6], [6, 7], [6, 8], [8, 7]] },
+    ];
+    const SPAN = 3400;
+    const TRIGGER = 640;
+    const SEG_DUR = 0.5;
+
+    function makeGlowTexture() {
+        const s = 64;
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = s;
+        const ctx = cv.getContext('2d');
+        const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.35, 'rgba(180,205,255,0.55)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+        return new THREE.CanvasTexture(cv);
+    }
+    const glowTex = makeGlowTexture();
+
+    function makeLabelTexture(zh, en) {
+        const w = 512, h = 160;
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(140,175,255,0.9)'; ctx.shadowBlur = 22;
+        ctx.fillStyle = '#dce9ff';
+        ctx.font = '600 62px "Microsoft YaHei", "PingFang SC", sans-serif';
+        ctx.fillText(zh, w / 2, h * 0.36);
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = 'rgba(165,195,255,0.85)';
+        ctx.font = '500 30px "Segoe UI", sans-serif';
+        if ('letterSpacing' in ctx) ctx.letterSpacing = '10px';
+        ctx.fillText(en, w / 2, h * 0.74);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+    }
+
+    const constellations = [];
+    for (const def of CONSTELLATIONS) {
+        const group = new THREE.Group();
+        group.position.set(def.off[0], def.off[1], -def.depth);
+        group.scale.setScalar(def.scale);
+        scene.add(group);
+
+        const n = def.stars.length;
+        const pos = new Float32Array(n * 3), phase = new Float32Array(n),
+            freq = new Float32Array(n), size = new Float32Array(n), tint = new Float32Array(n * 3);
+        let maxY = -Infinity;
+        def.stars.forEach((s, i) => {
+            pos.set([s[0], s[1], 0], i * 3);
+            phase[i] = Math.random() * Math.PI * 2;
+            freq[i] = 0.6 + Math.random() * 2.0;
+            size[i] = 5 + s[2] * 7;
+            tint.set(starColor(), i * 3);
+            if (s[1] > maxY) maxY = s[1];
+        });
+        const sg = new THREE.BufferGeometry();
+        sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        sg.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+        sg.setAttribute('aFreq', new THREE.BufferAttribute(freq, 1));
+        sg.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+        sg.setAttribute('aTint', new THREE.BufferAttribute(tint, 3));
+        const sm = new THREE.ShaderMaterial({
+            uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uOpacity: { value: 1 } },
+            vertexShader: starVert, fragmentShader: starFrag,
+            transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        });
+        const pts = new THREE.Points(sg, sm);
+        pts.frustumCulled = false;
+        group.add(pts);
+
+        const m = def.links.length;
+        const lPos = new Float32Array(m * 2 * 3);
+        const lg = new THREE.BufferGeometry();
+        lg.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
+        const lm = new THREE.LineBasicMaterial({
+            color: 0x8fb8ff, transparent: true, opacity: 0,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const lines = new THREE.LineSegments(lg, lm);
+        lines.frustumCulled = false;
+        group.add(lines);
+
+        const tipMat = new THREE.SpriteMaterial({
+            map: glowTex, color: 0xbfd6ff, transparent: true, opacity: 0,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const tip = new THREE.Sprite(tipMat);
+        tip.scale.setScalar(14);
+        group.add(tip);
+
+        const labelMat = new THREE.SpriteMaterial({
+            map: makeLabelTexture(def.name, def.en), transparent: true, opacity: 0,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const label = new THREE.Sprite(labelMat);
+        label.scale.set(120, 37.5, 1);
+        label.position.set(0, maxY + 46, 0);
+        group.add(label);
+
+        constellations.push({
+            def, group, sm, lm, lg, lPos, tip, tipMat, labelMat,
+            anim: { started: false, t: 0, done: false },
+        });
+    }
+
+    // =====================================================================
+    //  五、标题牌（相机相对坐标：飞来 → 停驻 → 淡出）
+    // =====================================================================
     function makeTitleTexture() {
         const w = 1600, h = 800;
         const cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
         const ctx = cv.getContext('2d');
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const grad = ctx.createLinearGradient(0, h * 0.18, 0, h * 0.60);
         grad.addColorStop(0.0, '#f2f7ff');
         grad.addColorStop(0.6, '#a8c8ff');
@@ -238,30 +359,25 @@ if (canvas && overlay && window.__testMode !== true) {
         return tex;
     }
     const titleMat = new THREE.MeshBasicMaterial({
-        map: makeTitleTexture(),
-        transparent: true, opacity: 0,
+        map: makeTitleTexture(), transparent: true, opacity: 0,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
     const titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(760, 380), titleMat);
     titleMesh.frustumCulled = false;
     scene.add(titleMesh);
 
-    const titleAnim = {
-        t: 0, delay: 0.9, dur: 4.2,
-        from: new THREE.Vector3(0, 20, -2800),
-        to: new THREE.Vector3(0, 30, -950),
-    };
-    function titleRestart() { titleAnim.t = -titleAnim.delay; }
+    const titleAnim = { state: 'fly', t: 0, delay: 0.9, dur: 4.2, hold: 7, fade: 1.6 };
+    function titleRestart() { titleAnim.state = 'fly'; titleAnim.t = -titleAnim.delay; }
     titleRestart();
 
-    // ---------- 交互：拖拽旋转 + 滚轮调速 ----------
+    // ---------- 交互：拖拽环顾 + 滚轮推进/后退 + 空格暂停 + T 重播标题 ----------
+    let speed = 90, speedTarget = 90, paused = false;
     let yaw = 0, pitch = 0, yawT = 0, pitchT = 0;
     let dragging = false, lastX = 0, lastY = 0, moved = false;
     // 标记本次按下是否发生了实质拖拽（用于区分"拖拽旋转"与"点击进入"）
     window.__starfieldDragged = false;
-    canvas.addEventListener('pointerdown', e => {
-        dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
-    });
+
+    canvas.addEventListener('pointerdown', e => { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; });
     window.addEventListener('pointerup', () => {
         dragging = false;
         window.__starfieldDragged = moved;
@@ -272,13 +388,14 @@ if (canvas && overlay && window.__testMode !== true) {
         if (!dragging) return;
         const dx = e.clientX - lastX, dy = e.clientY - lastY;
         if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
-        yawT -= dx * 0.0022;
-        pitchT -= dy * 0.0022;
-        pitchT = Math.max(-1.2, Math.min(1.2, pitchT));
+        yawT -= dx * 0.0018;
+        pitchT -= dy * 0.0018;
+        yawT = Math.max(-0.5, Math.min(0.5, yawT));
+        pitchT = Math.max(-0.4, Math.min(0.4, pitchT));
         lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('wheel', e => {
-        speedTarget = Math.max(0, Math.min(1200, speedTarget - e.deltaY * 0.4));
+        speedTarget = Math.max(-260, Math.min(700, speedTarget - e.deltaY * 0.5));
     }, { passive: true });
     window.addEventListener('keydown', function onKey(e) {
         if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
@@ -287,9 +404,8 @@ if (canvas && overlay && window.__testMode !== true) {
 
     // ---------- 自适应 ----------
     function resize() {
-        const w = window.innerWidth, h = window.innerHeight;
-        renderer.setSize(w, h, false);
-        camera.aspect = w / h;
+        renderer.setSize(window.innerWidth, window.innerHeight, false);
+        camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
     }
     window.addEventListener('resize', resize);
@@ -297,51 +413,138 @@ if (canvas && overlay && window.__testMode !== true) {
 
     // ---------- 主循环 ----------
     const clock = new THREE.Clock();
+    const _va = new THREE.Vector3(), _vb = new THREE.Vector3();
     let rafId = null;
+
     function animate() {
         rafId = requestAnimationFrame(animate);
         const dt = Math.min(clock.getDelta(), 0.05);
         const t = clock.elapsedTime;
-        speed += (speedTarget - speed) * Math.min(1, dt * 3);
+
+        speed += (speedTarget - speed) * Math.min(1, dt * 2.5);
         const v = paused ? 0 : speed;
+        camera.position.z -= v * dt;
+
         yaw += (yawT - yaw) * Math.min(1, dt * 6);
         pitch += (pitchT - pitch) * Math.min(1, dt * 6);
         camera.rotation.set(
-            pitch + Math.sin(t * 0.31) * 0.012,
-            yaw + Math.sin(t * 0.23) * 0.012,
-            Math.sin(t * 0.17) * 0.01,
+            pitch + Math.sin(t * 0.31) * 0.010,
+            yaw + Math.sin(t * 0.23) * 0.010,
+            Math.sin(t * 0.17) * 0.008,
             'YXZ'
         );
-        const trail = Math.max(3, v * 0.09);
+
+        // --- 星轨拖尾：随相机速度反向流动，相对相机双向回收 ---
+        const trail = Math.max(3, Math.abs(v) * 0.12);
+        const tdir = v >= 0 ? 1 : -1;
         for (let i = 0; i < FIELD.count; i++) {
             starZ[i] += v * dt;
-            if (starZ[i] > 10) resetStar(i, false);
+            if (starZ[i] > camera.position.z + 10) {              // 飞到身后 → 挪到前方远处
+                starZ[i] = camera.position.z - FIELD.depth - Math.random() * 200;
+                starX[i] = (Math.random() * 2 - 1) * FIELD.width;
+                starY[i] = (Math.random() * 2 - 1) * FIELD.height;
+            } else if (starZ[i] < camera.position.z - FIELD.depth - 300) {  // 倒退时前方耗尽 → 挪到身后
+                starZ[i] = camera.position.z + Math.random() * 50;
+                starX[i] = (Math.random() * 2 - 1) * FIELD.width;
+                starY[i] = (Math.random() * 2 - 1) * FIELD.height;
+            }
             const j = i * 6;
             sPos[j] = starX[i]; sPos[j + 1] = starY[i]; sPos[j + 2] = starZ[i];
-            sPos[j + 3] = starX[i]; sPos[j + 4] = starY[i]; sPos[j + 5] = starZ[i] - trail;
+            sPos[j + 3] = starX[i]; sPos[j + 4] = starY[i]; sPos[j + 5] = starZ[i] - trail * tdir;
             const k = i * 3;
             hPos[k] = starX[i]; hPos[k + 1] = starY[i]; hPos[k + 2] = starZ[i];
         }
         streakGeo.attributes.position.needsUpdate = true;
         headGeo.attributes.position.needsUpdate = true;
-        farMat.uniforms.uTime.value = t;
-        for (const n of nebulae) n.material.rotation += n.userData.rotSpeed * dt;
 
-        if (titleAnim.t < titleAnim.dur) {
-            titleAnim.t += dt;
-            const k = Math.max(0, Math.min(1, titleAnim.t / titleAnim.dur));
-            const e = 1 - Math.pow(1 - k, 3);
-            titleMesh.position.lerpVectors(titleAnim.from, titleAnim.to, e);
-            titleMat.opacity = Math.min(1, k * 3) * 0.95;
-            titleMesh.scale.setScalar(1);
-            titleMesh.lookAt(camera.position);
-        } else {
-            titleMesh.position.set(titleAnim.to.x, titleAnim.to.y + Math.sin(t * 0.6) * 6, titleAnim.to.z);
-            titleMesh.lookAt(camera.position);
-            const breathe = Math.sin(t * 1.6);
-            titleMat.opacity = 0.88 + breathe * 0.28;
-            titleMesh.scale.setScalar(1 + breathe * 0.035);
+        // --- 星云 / 远景星层：跟随相机平移 ---
+        for (const nb of nebulae) {
+            nb.position.copy(camera.position).add(nb.userData.dir);
+            nb.material.rotation += nb.userData.rotSpeed * dt;
         }
+        farPts.position.copy(camera.position);
+        farMat.uniforms.uTime.value = t;
+
+        // --- 星座：触发 / 连线 / 回收 ---
+        for (const c of constellations) {
+            const dist = camera.position.z - c.group.position.z;
+            const anim = c.anim;
+
+            if (dist < -220) {
+                c.group.position.z -= SPAN;
+                anim.started = false; anim.done = false; anim.t = 0;
+                c.lPos.fill(0);
+                c.lg.attributes.position.needsUpdate = true;
+                continue;
+            }
+
+            const vis = THREE.MathUtils.clamp((dist - 90) / 200, 0, 1);
+            c.sm.uniforms.uTime.value = t;
+            c.sm.uniforms.uOpacity.value = vis;
+
+            if (!anim.started && dist < TRIGGER) anim.started = true;
+
+            let lineAlpha = 0, tipAlpha = 0;
+            if (anim.started && !anim.done) {
+                anim.t += dt;
+                const segFloat = anim.t / SEG_DUR;
+                const segs = c.def.links;
+                for (let i = 0; i < segs.length; i++) {
+                    const p = THREE.MathUtils.clamp(segFloat - i, 0, 1);
+                    if (p <= 0) break;
+                    const a = c.def.stars[segs[i][0]], b = c.def.stars[segs[i][1]];
+                    _va.set(a[0], a[1], 0);
+                    _vb.set(b[0], b[1], 0).lerp(_va, 1 - p);
+                    const j = i * 6;
+                    c.lPos[j] = _va.x; c.lPos[j + 1] = _va.y; c.lPos[j + 2] = 0;
+                    c.lPos[j + 3] = _vb.x; c.lPos[j + 4] = _vb.y; c.lPos[j + 5] = 0;
+                    if (p < 1 && i === Math.floor(segFloat)) {
+                        tipAlpha = 0.95;
+                        c.tip.position.copy(_vb);
+                    }
+                }
+                c.lg.attributes.position.needsUpdate = true;
+                lineAlpha = Math.min(1, anim.t * 2.5);
+                if (segFloat >= segs.length) anim.done = true;
+            } else if (anim.done) {
+                lineAlpha = 1;
+            }
+
+            c.lm.opacity = 0.85 * lineAlpha * vis;
+            c.tipMat.opacity = tipAlpha * vis;
+            const labelTarget = anim.done ? 0.9 : (anim.started ? 0.4 : 0);
+            c.labelMat.opacity += (labelTarget * vis - c.labelMat.opacity) * Math.min(1, dt * 4);
+        }
+
+        // --- 标题牌：相机相对坐标，飞来 → 停驻呼吸 → 淡出 ---
+        if (titleAnim.state !== 'hidden') {
+            titleAnim.t += dt;
+            const A = titleAnim;
+            if (A.state === 'fly') {
+                const k = Math.max(0, Math.min(1, A.t / A.dur));
+                const e = 1 - Math.pow(1 - k, 3);
+                const zRel = -2800 + (-950 + 2800) * e;      // 相对相机的深度
+                titleMesh.position.set(0, 30 + Math.sin(t * 0.6) * 4, camera.position.z + zRel);
+                titleMat.opacity = Math.min(1, k * 3) * 0.95;
+                titleMesh.scale.setScalar(1);
+                titleMesh.lookAt(camera.position);
+                if (k >= 1) { A.state = 'hold'; A.t = 0; }
+            } else if (A.state === 'hold') {
+                const breathe = Math.sin(t * 1.6);
+                titleMesh.position.set(0, 30 + Math.sin(t * 0.6) * 6, camera.position.z - 950);
+                titleMesh.lookAt(camera.position);
+                titleMat.opacity = 0.88 + breathe * 0.28;
+                titleMesh.scale.setScalar(1 + breathe * 0.035);
+                if (A.t > A.hold) { A.state = 'fade'; A.t = 0; }
+            } else if (A.state === 'fade') {
+                const k = Math.min(1, A.t / A.fade);
+                titleMesh.position.set(0, 30 + Math.sin(t * 0.6) * 6, camera.position.z - 950);
+                titleMesh.lookAt(camera.position);
+                titleMat.opacity = 0.88 * (1 - k);
+                if (k >= 1) { A.state = 'hidden'; titleMat.opacity = 0; }
+            }
+        }
+
         renderer.render(scene, camera);
     }
     animate();
