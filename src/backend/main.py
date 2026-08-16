@@ -40,14 +40,18 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def no_cache_frontend(request, call_next):
-    """开发期：前端 HTML/JS/CSS/JSON 永不缓存，避免改动后浏览器仍显示旧版界面"""
+async def cache_control(request, call_next):
+    """HTML/JS/CSS 禁缓存（改动即时生效）；星表等静态数据 JSON 长缓存（前端用 ?v= 版本号失效）"""
     response = await call_next(request)
+    path = request.url.path
     if (
-        request.url.path in ("/", "/frontend", "/frontend/")
-        or request.url.path.endswith((".html", ".js", ".css", ".json"))
+        path in ("/", "/frontend", "/frontend/")
+        or path.endswith((".html", ".js", ".css"))
+        or (path.startswith("/api/") or path.startswith("/health"))
     ):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    elif path.startswith(("/data/", "/frontend/data/")) and path.endswith(".json"):
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return response
 
 app.include_router(chat.router, prefix="/api")
