@@ -2564,10 +2564,10 @@
         }
     }
     </script>
-    <script type="module" src="js/starfield-intro.js?v=20260816c"></script>
+    <script type="module" src="js/starfield-intro.js?v=20260823c"></script>
     <script type="module" src="js/app.js?v=20260813m"></script>
     <script>
-    // 开场流程：星空封面（自动 10 秒，可点击提前）→ 视频 → 进入系统
+    // 开场流程：星空封面（自动 18 秒，可点击提前）→ 视频 → 进入系统
     (function () {
         const cover = document.getElementById('cover-overlay');
         const overlay = document.getElementById('intro-video-overlay');
@@ -2627,11 +2627,11 @@
             startVideo();
         }
 
-        // 封面：自动 10 秒后进入视频
+        // 封面：自动 18 秒后进入视频
         if (cover) {
-            // 打开即开始预加载视频（后台 buffering），10 秒封面动画时间用于加载
+            // 打开即开始预加载视频（后台 buffering），18 秒封面动画时间用于加载
             video.load();
-            coverTimer = setTimeout(enterVideo, 10000);
+            coverTimer = setTimeout(enterVideo, 18000);
             // 点击封面：提前进入视频（排除拖拽旋转操作）
             cover.addEventListener('click', function () {
                 if (window.__starfieldDragged) return;

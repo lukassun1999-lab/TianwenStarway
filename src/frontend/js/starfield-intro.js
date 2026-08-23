@@ -1,7 +1,9 @@
 /**
- * 开场星座穿越封面动画（替代上一版星空封面）
- * 来源：constellation.html —— 多彩星轨 + 星云 + 远景闪烁 + 五座星座（逐星连线触发）
- * 自动播放 10 秒后进入视频；用户点击可提前进入（拖拽旋转不算点击）。
+ * 开场封面动画（C 方案：金色流星爆发 → 加速冲入 → 星座穿越巡航）
+ * 0~3.5s  金色流星爆发（放射流星 + 拖尾余烬 + 紫金烟雾 + 暖金标题）
+ * 3.5~6.2s 镜头加速"冲入星途"，金色层淡出，多彩星轨/星云/星座同步淡入
+ * 6.2s 后  巡航观景：多彩星轨 + 星云 + 远景闪烁 + 五座星座（逐星连线触发）
+ * 自动播放 18 秒后进入视频；用户点击可提前进入（拖拽旋转不算点击）。
  * 使用 index.html 中已配置的 importmap（three@0.160.0）。
  */
 import * as THREE from 'three';
@@ -197,6 +199,157 @@ if (canvas && overlay && window.__testMode !== true) {
     })();
 
     // =====================================================================
+    //  三·五、金色流星爆发层（0~3.5s 主导，冲入星途时淡出）—— C 方案新增
+    // =====================================================================
+    const WARM_PALETTE = [
+        { c: [1.00, 0.97, 0.84], w: 30 }, { c: [1.00, 0.85, 0.50], w: 30 },
+        { c: [1.00, 0.68, 0.32], w: 20 }, { c: [1.00, 0.52, 0.22], w: 12 },
+        { c: [0.82, 0.72, 1.00], w: 8 },
+    ];
+    const WARM_TOTAL = WARM_PALETTE.reduce((s, p) => s + p.w, 0);
+    function warmColor() {
+        let r = Math.random() * WARM_TOTAL;
+        for (const p of WARM_PALETTE) { r -= p.w; if (r <= 0) return p.c; }
+        return WARM_PALETTE[0].c;
+    }
+
+    const MET_COUNT = 380;
+    const mTh = new Float32Array(MET_COUNT), mR = new Float32Array(MET_COUNT),
+        mZrel = new Float32Array(MET_COUNT), mVr = new Float32Array(MET_COUNT),
+        mVz = new Float32Array(MET_COUNT), mTl = new Float32Array(MET_COUNT);
+    const mCols = new Float32Array(MET_COUNT * 3);
+    function respawnMeteor(i, initial) {
+        mTh[i] = Math.random() * Math.PI * 2;
+        mR[i] = initial ? (30 + Math.random() * 1300) : (25 + Math.random() * 150);
+        mZrel[i] = -(480 + Math.random() * 1500);
+        mVr[i] = 130 + Math.random() * 360;
+        mVz[i] = 20 + Math.random() * 85;
+        mTl[i] = (70 + mVr[i] * 0.5) * (0.7 + Math.random() * 1.0);
+        mCols.set(warmColor(), i * 3);
+    }
+
+    const mPos = new Float32Array(MET_COUNT * 6);
+    const mCol = new Float32Array(MET_COUNT * 6);
+    const mGeo = new THREE.BufferGeometry();
+    mGeo.setAttribute('position', new THREE.BufferAttribute(mPos, 3).setUsage(THREE.DynamicDrawUsage));
+    mGeo.setAttribute('color', new THREE.BufferAttribute(mCol, 3).setUsage(THREE.DynamicDrawUsage));
+    const metStreaks = new THREE.LineSegments(mGeo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    metStreaks.frustumCulled = false;
+    scene.add(metStreaks);
+
+    function makeMeteorHeadTexture() {
+        const s = 64, cv = document.createElement('canvas');
+        cv.width = cv.height = s;
+        const ctx = cv.getContext('2d');
+        const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.3, 'rgba(255,226,170,0.55)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+        return new THREE.CanvasTexture(cv);
+    }
+    const mHeadPos = new Float32Array(MET_COUNT * 3);
+    const mHeadCol = new Float32Array(MET_COUNT * 3);
+    const mHeadGeo = new THREE.BufferGeometry();
+    mHeadGeo.setAttribute('position', new THREE.BufferAttribute(mHeadPos, 3).setUsage(THREE.DynamicDrawUsage));
+    mHeadGeo.setAttribute('color', new THREE.BufferAttribute(mHeadCol, 3).setUsage(THREE.DynamicDrawUsage));
+    const metHeads = new THREE.Points(mHeadGeo, new THREE.PointsMaterial({
+        map: makeMeteorHeadTexture(), vertexColors: true, size: 20, sizeAttenuation: true,
+        transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    metHeads.frustumCulled = false;
+    scene.add(metHeads);
+
+    for (let i = 0; i < MET_COUNT; i++) respawnMeteor(i, true);
+
+    // 贴拖尾的余烬火花（复用共享闪烁着色器，高频闪烁模拟碎金）
+    const EMBER_COUNT = 620;
+    const emberMeteor = new Uint16Array(EMBER_COUNT);
+    const emberU = new Float32Array(EMBER_COUNT);
+    const emberJx = new Float32Array(EMBER_COUNT), emberJy = new Float32Array(EMBER_COUNT);
+    const ePos = new Float32Array(EMBER_COUNT * 3);
+    const ePhase = new Float32Array(EMBER_COUNT), eFreq = new Float32Array(EMBER_COUNT),
+        eSize = new Float32Array(EMBER_COUNT), eTint = new Float32Array(EMBER_COUNT * 3);
+    for (let i = 0; i < EMBER_COUNT; i++) {
+        emberMeteor[i] = i % MET_COUNT;
+        emberU[i] = 0.15 + Math.random() * 0.85;
+        emberJx[i] = (Math.random() * 2 - 1) * 7;
+        emberJy[i] = (Math.random() * 2 - 1) * 7;
+        ePhase[i] = Math.random() * Math.PI * 2;
+        eFreq[i] = 3 + Math.random() * 7;
+        eSize[i] = 4 + Math.random() * 7;
+        const c = warmColor();
+        eTint.set([Math.min(1, c[0] * 0.6 + 0.4), Math.min(1, c[1] * 0.6 + 0.4), Math.min(1, c[2] * 0.6 + 0.4)], i * 3);
+    }
+    const emberGeo = new THREE.BufferGeometry();
+    emberGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3).setUsage(THREE.DynamicDrawUsage));
+    emberGeo.setAttribute('aPhase', new THREE.BufferAttribute(ePhase, 1));
+    emberGeo.setAttribute('aFreq', new THREE.BufferAttribute(eFreq, 1));
+    emberGeo.setAttribute('aSize', new THREE.BufferAttribute(eSize, 1));
+    emberGeo.setAttribute('aTint', new THREE.BufferAttribute(eTint, 3));
+    const emberMat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uOpacity: { value: 0.95 } },
+        vertexShader: starVert, fragmentShader: starFrag,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const embers = new THREE.Points(emberGeo, emberMat);
+    embers.frustumCulled = false;
+    scene.add(embers);
+
+    // 紫金烟雾光晕（参考图氛围）
+    function makeWispTexture(r, g, b) {
+        const s = 256, cv = document.createElement('canvas');
+        cv.width = cv.height = s;
+        const ctx = cv.getContext('2d');
+        const g1 = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        g1.addColorStop(0, `rgba(${r},${g},${b},0.75)`);
+        g1.addColorStop(0.4, `rgba(${r},${g},${b},0.28)`);
+        g1.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g1; ctx.fillRect(0, 0, s, s);
+        ctx.globalCompositeOperation = 'lighter';
+        const g2 = ctx.createRadialGradient(s * 0.36, s * 0.62, 0, s * 0.36, s * 0.62, s * 0.42);
+        g2.addColorStop(0, `rgba(${r},${g},${b},0.4)`);
+        g2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g2; ctx.fillRect(0, 0, s, s);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+    }
+    const WISP_DEFS = [
+        { c: [150, 110, 255], pos: [-560, 330, -1600], scale: 1500, op: 0.30 },
+        { c: [110, 90, 230], pos: [620, -280, -1400], scale: 1300, op: 0.24 },
+        { c: [200, 120, 200], pos: [520, 420, -2000], scale: 1800, op: 0.16 },
+        { c: [255, 190, 110], pos: [-680, -320, -1900], scale: 1400, op: 0.16 },
+    ];
+    const wisps = [];
+    for (const def of WISP_DEFS) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: makeWispTexture(...def.c), transparent: true, opacity: def.op,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        sp.position.set(...def.pos);
+        sp.scale.setScalar(def.scale);
+        sp.material.rotation = Math.random() * Math.PI * 2;
+        sp.userData.rot = (Math.random() - 0.5) * 0.02;
+        sp.userData.op = def.op;
+        scene.add(sp);
+        wisps.push(sp);
+    }
+
+    // 开场冲击闪光（中心金色爆闪，前 ~1.3s 淡出；配合 FOV 猛推制造爆发感）
+    const flashMat = new THREE.SpriteMaterial({
+        map: makeMeteorHeadTexture(), color: 0xffe2b0, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const flash = new THREE.Sprite(flashMat);
+    flash.position.set(0, 0, -700);
+    flash.scale.setScalar(1700);
+    scene.add(flash);
+
+    // =====================================================================
     //  四、星座（纵深分布 + 逐星座触发连线）—— 本次升级重点
     // =====================================================================
     const CONSTELLATIONS = [
@@ -217,7 +370,7 @@ if (canvas && overlay && window.__testMode !== true) {
             links: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [0, 6], [6, 7], [6, 8], [8, 7]] },
     ];
     const SPAN = 3400;
-    const TRIGGER = 640;
+    const TRIGGER = 760;
     const SEG_DUR = 0.5;
 
     function makeGlowTexture() {
@@ -334,22 +487,22 @@ if (canvas && overlay && window.__testMode !== true) {
         const ctx = cv.getContext('2d');
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const grad = ctx.createLinearGradient(0, h * 0.18, 0, h * 0.60);
-        grad.addColorStop(0.0, '#f2f7ff');
-        grad.addColorStop(0.6, '#a8c8ff');
-        grad.addColorStop(1.0, '#7d9bff');
+        grad.addColorStop(0.0, '#fffaf0');
+        grad.addColorStop(0.55, '#ffdca6');
+        grad.addColorStop(1.0, '#f4a95e');
         ctx.font = '600 230px "Microsoft YaHei", "PingFang SC", sans-serif';
         if ('letterSpacing' in ctx) ctx.letterSpacing = '28px';
-        ctx.shadowColor = 'rgba(130, 170, 255, 0.95)';
+        ctx.shadowColor = 'rgba(255, 196, 110, 0.95)';
         ctx.shadowBlur = 70;
         ctx.fillStyle = grad;
         ctx.fillText('天问 · 星途', w / 2, h * 0.38);
         ctx.font = '500 82px "Segoe UI", "Microsoft YaHei", sans-serif';
         if ('letterSpacing' in ctx) ctx.letterSpacing = '26px';
         ctx.shadowBlur = 32;
-        ctx.fillStyle = 'rgba(175, 205, 255, 0.9)';
+        ctx.fillStyle = 'rgba(255, 220, 175, 0.9)';
         ctx.fillText('TIANWEN STARWAY', w / 2, h * 0.70);
         ctx.shadowBlur = 14;
-        ctx.strokeStyle = 'rgba(145, 180, 255, 0.75)';
+        ctx.strokeStyle = 'rgba(255, 205, 140, 0.7)';
         ctx.lineWidth = 3;
         const line = (y) => { ctx.beginPath(); ctx.moveTo(w * 0.24, y); ctx.lineTo(w * 0.76, y); ctx.stroke(); };
         line(h * 0.15); line(h * 0.85);
@@ -366,12 +519,12 @@ if (canvas && overlay && window.__testMode !== true) {
     titleMesh.frustumCulled = false;
     scene.add(titleMesh);
 
-    const titleAnim = { state: 'fly', t: 0, delay: 0.9, dur: 4.2, hold: 7, fade: 1.6 };
+    const titleAnim = { state: 'fly', t: 0, delay: 0.6, dur: 2.6, hold: 0.8, fade: 1.4 };
     function titleRestart() { titleAnim.state = 'fly'; titleAnim.t = -titleAnim.delay; }
     titleRestart();
 
     // ---------- 交互：拖拽环顾 + 滚轮推进/后退 + 空格暂停 + T 重播标题 ----------
-    let speed = 90, speedTarget = 90, paused = false;
+    let speed = 25, speedTarget = 25, paused = false, cruiseSet = false;
     let yaw = 0, pitch = 0, yawT = 0, pitchT = 0;
     let dragging = false, lastX = 0, lastY = 0, moved = false;
     // 标记本次按下是否发生了实质拖拽（用于区分"拖拽旋转"与"点击进入"）
@@ -421,6 +574,23 @@ if (canvas && overlay && window.__testMode !== true) {
         const dt = Math.min(clock.getDelta(), 0.05);
         const t = clock.elapsedTime;
 
+        // --- C 方案节奏：金色爆发(0~3.5s) → 加速冲入(3.5~6.2s) → 巡航观景 ---
+        if (t < 3.5) speedTarget = 25;
+        else if (t < 6.2) speedTarget = 300;
+        else if (!cruiseSet) { speedTarget = 95; cruiseSet = true; }
+        const tourAlpha = THREE.MathUtils.smoothstep(t, 3.5, 5.3);
+        const meteorAlpha = 1 - tourAlpha;
+
+        // 爆发期亮度脉冲：一波波涌出的呼吸感（约 1.9s 一波，过渡时随 meteorAlpha 自然收敛）
+        const pulse = Math.pow(0.5 + 0.5 * Math.sin(t * 3.4), 2.2);
+        const burstGlow = 0.55 + 0.75 * pulse;
+
+        // 开场冲击：FOV 猛推（70→83 回弹）+ 中心爆闪
+        const kick = Math.max(0, 1 - t / 1.2);
+        camera.fov = 70 + 13 * kick * kick;
+        camera.updateProjectionMatrix();
+        flashMat.opacity = Math.max(0, 1 - t / 1.3) * 0.85 * meteorAlpha;
+
         speed += (speedTarget - speed) * Math.min(1, dt * 2.5);
         const v = paused ? 0 : speed;
         camera.position.z -= v * dt;
@@ -456,14 +626,70 @@ if (canvas && overlay && window.__testMode !== true) {
         }
         streakGeo.attributes.position.needsUpdate = true;
         headGeo.attributes.position.needsUpdate = true;
+        // 多彩星轨/星头随"冲入"淡入
+        streaks.material.opacity = tourAlpha;
+        heads.material.opacity = 0.85 * tourAlpha;
+
+        // --- 金色流星爆发（相对相机定位；meteorAlpha 控制整体淡出）---
+        for (let i = 0; i < MET_COUNT; i++) {
+            mR[i] += mVr[i] * dt;
+            mZrel[i] += mVz[i] * dt;
+            if (mR[i] > -mZrel[i] * 1.5 || mZrel[i] > -130) respawnMeteor(i, false);
+            const kR = -mZrel[i] * 1.5;
+            const a = THREE.MathUtils.clamp((kR - mR[i]) / (kR * 0.22), 0, 1)
+                * THREE.MathUtils.clamp((mR[i] - 25) / 90, 0, 1);
+            const mc = Math.cos(mTh[i]), ms = Math.sin(mTh[i]);
+            const wz = camera.position.z + mZrel[i];
+            const tr = Math.max(4, mR[i] - mTl[i]);
+            const mj = i * 6;
+            mPos[mj] = mR[i] * mc; mPos[mj + 1] = mR[i] * ms; mPos[mj + 2] = wz;
+            mPos[mj + 3] = tr * mc; mPos[mj + 4] = tr * ms; mPos[mj + 5] = wz - 6;
+            const mk = i * 3;
+            mCol[mj] = mCols[mk] * a; mCol[mj + 1] = mCols[mk + 1] * a; mCol[mj + 2] = mCols[mk + 2] * a;
+            mCol[mj + 3] = mCols[mk] * 0.10 * a; mCol[mj + 4] = mCols[mk + 1] * 0.10 * a; mCol[mj + 5] = mCols[mk + 2] * 0.10 * a;
+            mHeadPos[mk] = mPos[mj]; mHeadPos[mk + 1] = mPos[mj + 1]; mHeadPos[mk + 2] = wz;
+            const hb = Math.min(1, a * 1.2);
+            mHeadCol[mk] = Math.min(1, mCols[mk] * hb * 1.15);
+            mHeadCol[mk + 1] = Math.min(1, mCols[mk + 1] * hb * 1.15);
+            mHeadCol[mk + 2] = Math.min(1, mCols[mk + 2] * hb * 1.15);
+        }
+        mGeo.attributes.position.needsUpdate = true;
+        mGeo.attributes.color.needsUpdate = true;
+        mHeadGeo.attributes.position.needsUpdate = true;
+        mHeadGeo.attributes.color.needsUpdate = true;
+        metStreaks.material.opacity = meteorAlpha * burstGlow;
+        metHeads.material.opacity = 0.9 * meteorAlpha * burstGlow;
+
+        // 余烬沿各自流星拖尾分布
+        emberMat.uniforms.uTime.value = t;
+        emberMat.uniforms.uOpacity.value = 0.95 * meteorAlpha * burstGlow;
+        for (let i = 0; i < EMBER_COUNT; i++) {
+            const m = emberMeteor[i];
+            const ec = Math.cos(mTh[m]), es = Math.sin(mTh[m]);
+            const hx = mR[m] * ec, hy = mR[m] * es;
+            const tr2 = Math.max(4, mR[m] - mTl[m]);
+            const u = emberU[i];
+            ePos[i * 3] = tr2 * ec + (hx - tr2 * ec) * u + emberJx[i];
+            ePos[i * 3 + 1] = tr2 * es + (hy - tr2 * es) * u + emberJy[i];
+            ePos[i * 3 + 2] = camera.position.z + mZrel[m] - 6;
+        }
+        emberGeo.attributes.position.needsUpdate = true;
 
         // --- 星云 / 远景星层：跟随相机平移 ---
         for (const nb of nebulae) {
             nb.position.copy(camera.position).add(nb.userData.dir);
             nb.material.rotation += nb.userData.rotSpeed * dt;
+            nb.material.opacity = 0.9 * tourAlpha;
         }
         farPts.position.copy(camera.position);
         farMat.uniforms.uTime.value = t;
+        farMat.uniforms.uOpacity.value = 0.25 + 0.55 * tourAlpha;
+
+        // 紫金烟雾：随金色爆发层一起淡出，并跟随脉冲轻度呼吸
+        for (const w of wisps) {
+            w.material.rotation += w.userData.rot * dt;
+            w.material.opacity = w.userData.op * meteorAlpha * (0.7 + 0.5 * pulse);
+        }
 
         // --- 星座：触发 / 连线 / 回收 ---
         for (const c of constellations) {
@@ -478,7 +704,7 @@ if (canvas && overlay && window.__testMode !== true) {
                 continue;
             }
 
-            const vis = THREE.MathUtils.clamp((dist - 90) / 200, 0, 1);
+            const vis = THREE.MathUtils.clamp((dist - 90) / 200, 0, 1) * tourAlpha;
             c.sm.uniforms.uTime.value = t;
             c.sm.uniforms.uOpacity.value = vis;
 
