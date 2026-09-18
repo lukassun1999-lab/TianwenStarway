@@ -2,6 +2,7 @@
 import asyncio
 import httpx
 import json
+import re
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -20,33 +21,75 @@ _openmaic_fail_count = 0
 _openmaic_max_fails = 3
 
 
+# 配额/余额类业务错误码：重试无意义，应立即失败
+_QUOTA_ERROR_CODES = {1008, 2056}
+
+# 业务错误码 → 用户可读提示
+_ERROR_CODE_MESSAGES = {
+    1008: "AI 服务账户余额不足（1008），请前往 MiniMax 控制台充值后重试。",
+    2056: "AI 服务用量额度已达上限（2056，Token Plan 额度或积分已用尽），请升级套餐、购买积分，或在控制台切换为按量计费后重试。",
+}
+
+# MiniMax 有时把错误码写在 message 文本末尾，如 "... 用量上限 ... (2056)"
+_ERROR_CODE_IN_MESSAGE_RE = re.compile(r"[（(]\s*(\d{3,5})\s*[)）]")
+
+
+def _extract_error_code(body: str):
+    """从 MiniMax 响应体解析业务错误码。
+
+    兼容三种形式（实测 2056 走的是第 3 种）：
+    1. `base_resp.status_code`（如 1008）
+    2. `error.code` / `code`
+    3. 错误码嵌在 `error.message` 文本里，如 "...购买积分补充用量。 (2056)"
+    """
+    if not body:
+        return None
+    try:
+        data = json.loads(body)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    code = (
+        (data.get("base_resp") or {}).get("status_code")
+        or (data.get("error") or {}).get("code")
+        or data.get("code")
+    )
+    if code is not None:
+        return code
+
+    # 兜底：从 message 文本中提取括号内的错误码
+    message = (data.get("error") or {}).get("message") or data.get("message") or ""
+    match = _ERROR_CODE_IN_MESSAGE_RE.search(str(message))
+    return int(match.group(1)) if match else None
+
+
+def _is_quota_error(body: str) -> bool:
+    """是否为配额/余额用尽类错误（重试无意义）。"""
+    return _extract_error_code(body) in _QUOTA_ERROR_CODES
+
+
 def _friendly_error(status_code: int = 0, body: str = "", network: bool = False) -> str:
-    """把 MiniMax 错误码翻译成用户可读的中文提示。"""
+    """把 MiniMax 错误码翻译成用户可读的中文提示。
+
+    注意：MiniMax 会把配额/余额类错误也包在 HTTP 429 里（如 2056 Token Plan 额度上限），
+    因此必须先解析响应体业务错误码，再退回按 HTTP 状态码判断，
+    否则会把"额度用尽"误报成"请求过于频繁"。"""
     if network:
         return "无法连接 AI 服务，请检查网络后重试。"
+
+    # 业务错误码优先：同一个 HTTP 状态码可能对应完全不同的原因
+    err_code = _extract_error_code(body)
+    if err_code in _ERROR_CODE_MESSAGES:
+        return _ERROR_CODE_MESSAGES[err_code]
+
     if status_code == 401:
         return "AI 服务密钥无效（401），请检查 src/backend/.env 中的 LLM_API_KEY。"
     if status_code == 402:
         return "AI 服务账户余额不足（402），请前往 MiniMax 控制台充值后重试。"
     if status_code == 429:
         return "请求过于频繁（429），请稍等片刻再试。"
-
-    # MiniMax 错误码在响应体 base_resp.status_code / error.code 中
-    err_code = None
-    if body:
-        try:
-            data = json.loads(body)
-            err_code = (
-                data.get("base_resp", {}).get("status_code")
-                or data.get("error", {}).get("code")
-                or data.get("code")
-            )
-        except Exception:
-            pass
-    if err_code == 1008:
-        return "AI 服务账户余额不足（1008），请前往 MiniMax 控制台充值后重试。"
-    if err_code == 2056:
-        return "AI 服务 Token Plan 用量已达上限（2056），请等待额度重置或升级套餐。"
 
     return f"AI 服务暂时不可用（HTTP {status_code}），请稍后重试。"
 
@@ -187,13 +230,19 @@ async def call_minimax_direct(messages, api_key, system_prompt, max_tokens=4096)
                     # 账户/密钥类错误，重试无意义，立即失败
                     raise LLMError(_friendly_error(resp.status_code, resp.text))
                 if resp.status_code == 429:
-                    last_error = _friendly_error(429)
+                    last_error = _friendly_error(429, resp.text)
+                    # 配额/余额用尽（2056/1008）重试无意义：立即失败，避免用户白等约 14 秒
+                    if _is_quota_error(resp.text):
+                        raise LLMError(last_error)
                     if attempt < max_retries - 1:
                         wait = (2 ** attempt) * 2  # 2, 4, 8 seconds
                         print(f"MiniMax 429, retrying in {wait}s (attempt {attempt+1}/{max_retries})")
                         await asyncio.sleep(wait)
                     continue
                 last_error = _friendly_error(resp.status_code, resp.text)
+                # 配额/余额用尽重试无意义，立即失败
+                if _is_quota_error(resp.text):
+                    raise LLMError(last_error)
                 if attempt < max_retries - 1:
                     wait = (2 ** attempt)
                     print(f"MiniMax {resp.status_code}, retrying in {wait}s")
