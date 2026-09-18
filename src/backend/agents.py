@@ -1,6 +1,3 @@
-AGENT_ID_SCIENCE = "default-1"
-AGENT_ID_CULTURE = "default-3"
-
 # ==================== 初中版提示词 ====================
 
 SCIENCE_OFFICER_PROMPT_JUNIOR = """你是科学官"开普勒"——一位热爱天文、喜欢和初中生聊天的科学老师。你的灵魂碎片被保存在双极罗盘中，陪伴守夜人学徒探索星星。

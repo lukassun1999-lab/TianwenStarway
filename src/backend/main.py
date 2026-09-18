@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 import httpx
 import sys
 import os as _os
@@ -10,25 +9,10 @@ import os as _os
 sys.path.insert(0, _os.path.dirname(__file__))
 
 from routers import chat, stars, progress
-from config import OPENMAIC_BASE_URL, LLM_API_KEY
+from config import LLM_API_KEY
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """启动时检测 OpenMAIC 编排层连接状态"""
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"{OPENMAIC_BASE_URL}/api/health")
-        if resp.status_code == 200:
-            print(f"[OK] OpenMAIC 编排层已连接 ({OPENMAIC_BASE_URL})")
-        else:
-            print(f"[WARN] OpenMAIC 响应异常 ({OPENMAIC_BASE_URL})，将使用 MiniMax 直连")
-    except Exception:
-        print(f"[WARN] OpenMAIC 未响应 ({OPENMAIC_BASE_URL})，将使用 MiniMax 直连")
-    yield
-
-
-app = FastAPI(title="Tianwen Starway API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Tianwen Starway API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

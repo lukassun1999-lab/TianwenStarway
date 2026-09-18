@@ -9,12 +9,10 @@ import re
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from session import store
-from openmaic_client import call_openmaic_chat, call_minimax_direct, LLMError
+from minimax_client import call_minimax_direct, LLMError
 from agents import (
     SCIENCE_OFFICER_PROMPT_JUNIOR,
     GRAND_HISTORIAN_PROMPT_JUNIOR,
-    AGENT_ID_SCIENCE,
-    AGENT_ID_CULTURE,
 )
 from knowledge_base import search_knowledge
 import config
@@ -283,11 +281,8 @@ def _generate_suggested_questions(star_id: str, lit_nodes: set[str]) -> list[str
     return questions[:2]
 
 
-async def _call_agent(messages, system_prompt, agent_id, api_key, model):
-    """优先通过 OpenMAIC 编排对话，失败时回退到 MiniMax"""
-    result = await call_openmaic_chat(messages, api_key, system_prompt, agent_id)
-    if result:
-        return result
+async def _call_agent(messages, system_prompt, api_key):
+    """调用一位导师（MiniMax 直连）"""
     return await call_minimax_direct(messages, api_key, system_prompt)
 
 
@@ -298,7 +293,6 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     star_id: Optional[str] = None
     api_key: Optional[str] = None
-    model: str = "minimax"
     # blend：罗盘融合（主流程）；quiz：觉醒前小测验出题
     action: Literal["initial", "question", "awaken", "blend", "quiz"] = "initial"
     decision: Optional[Literal["science", "history", "compare"]] = None
@@ -408,8 +402,8 @@ async def _chat_initial(req, session, sp, profile, star_id, science_prompt, cult
     opening_question = f"请为初中生介绍{star_display}。科学官讲它是什么、为什么重要；太史令讲古人怎么看它。"
     messages = [{"role": "user", "content": opening_question}]
 
-    science_task = _call_agent(messages, science_prompt, AGENT_ID_SCIENCE, api_key, req.model)
-    culture_task = _call_agent(messages, culture_prompt, AGENT_ID_CULTURE, api_key, req.model)
+    science_task = _call_agent(messages, science_prompt, api_key)
+    culture_task = _call_agent(messages, culture_prompt, api_key)
     science_result, culture_result = await asyncio.gather(science_task, culture_task)
     science_result = _clean_self_talk(science_result)
     culture_result = _clean_self_talk(culture_result)
@@ -450,8 +444,8 @@ async def _chat_question(req, session, sp, profile, star_id, science_prompt, cul
         if profile:
             new_nodes = _match_cognitive_nodes(user_question, profile)
     else:
-        science_task = _call_agent(messages, science_prompt, AGENT_ID_SCIENCE, api_key, req.model)
-        culture_task = _call_agent(messages, culture_prompt, AGENT_ID_CULTURE, api_key, req.model)
+        science_task = _call_agent(messages, science_prompt, api_key)
+        culture_task = _call_agent(messages, culture_prompt, api_key)
         if profile:
             # 认知分类与双导师回答并行，降低延迟
             classify_task = _match_cognitive_nodes_llm(user_question, profile, api_key)
@@ -558,7 +552,7 @@ async def _chat_blend(req, session, sp, profile, star_id, science_prompt, cultur
 注意：这是对这颗星的总结性话语，不要以问题、追问或引导继续提问结尾。"""
 
         messages = [{"role": "user", "content": blend_prompt}]
-        merged_result = _clean_self_talk(await _call_agent(messages, science_prompt, AGENT_ID_SCIENCE, api_key, req.model))
+        merged_result = _clean_self_talk(await _call_agent(messages, science_prompt, api_key))
 
     resp["resonance"] = merged_result
     resp["stage"] = sp.stage.value
