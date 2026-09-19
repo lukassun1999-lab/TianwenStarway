@@ -122,7 +122,7 @@ const state = {
     anomalyLog: [],      // 星空异动记录
     fragments: [],       // 星空异动碎片（供觉醒前小测验出题）
     quiz: { questions: [], index: 0, score: 0, done: false }, // 星空小测验状态
-    viewMode: '2d',      // 视图模式：'2d' 极投影星图（主视图）/ '3d' 沉浸星空 / 'observe' 地面观星
+    viewMode: '2d',      // 视图模式：'2d' 极投影星图（主视图）/ '3d' 沉浸星空
     viewHemisphere: 'north', // 2D 模式当前视角：north 北天极 / south 南天极
     chineseAsterisms: null, // 中国星官连线数据
     chapters: null,       // 五章书页导航数据
@@ -543,10 +543,11 @@ function showAchievementPanel() {
         archiveHtml += '<div class="archive-lib-list">';
         for (const sid of archiveIds) {
             const a = state.archives[sid] || {};
+            const name = escapeHtml(a.star_name || sid);
             archiveHtml += `
-                <div class="archive-lib-item" data-star="${sid}" role="button" tabindex="0" aria-label="查看 ${a.star_name || sid} 的启示">
-                    <span class="ali-name">✦ ${a.star_name || sid}</span>
-                    <span class="ali-date">${(a.awakened_at || '').slice(0, 10)}</span>
+                <div class="archive-lib-item" data-star="${escapeHtml(sid)}" role="button" tabindex="0" aria-label="查看 ${name} 的启示">
+                    <span class="ali-name">✦ ${name}</span>
+                    <span class="ali-date">${escapeHtml((a.awakened_at || '').slice(0, 10))}</span>
                 </div>
             `;
         }
@@ -585,8 +586,8 @@ function showAchievementPanel() {
                 .map(([k, v]) => `${({ fact: '科学', culture: '文化', compare: '对比' })[k] || k}问题 ${v} 个`)
                 .join('、');
             detail.innerHTML = `
-                <p class="ald-resonance">${(a.resonance || '').replace(/\n/g, '<br>')}</p>
-                <p class="ald-note">我的感悟：${(a.personal_note || '').replace(/\n/g, '<br>')}</p>
+                <p class="ald-resonance">${nl2br(a.resonance)}</p>
+                <p class="ald-note">我的感悟：${nl2br(a.personal_note)}</p>
                 ${statsHtml ? `<p class="ald-stats">这次旅程，你追问了 ${statsHtml}</p>` : ''}
                 ${a.quiz ? `<p class="ald-quiz">星空小测验：答对 ${a.quiz.score}/${a.quiz.total}</p>` : ''}
             `;
@@ -650,12 +651,20 @@ async function initStarData() {
         state.dsos = await dsosResp.json();
         console.log('Star profiles loaded:', Object.keys(state.starProfiles).length, 'profiles');
 
-        // 建立英文 proper 名到中文名的映射，供星辰库显示中文名
+        // 档案名 ↔ star_id 双向映射（星辰库、搜索框、觉醒定位共用一份，避免各处硬编码）
         window._properToCn = {};
+        window._profileKeyByName = {};
+        window._profileNamesById = {};
         for (const key of Object.keys(state.starProfiles)) {
             const profile = state.starProfiles[key];
-            if (profile.name_en) {
-                window._properToCn[profile.name_en.toLowerCase()] = profile.name_cn;
+            const names = [profile.name_cn]
+                .concat((profile.name_en || '').split('&').map(s => s.trim()))
+                .concat(profile.aliases || [])
+                .filter(Boolean);
+            window._profileNamesById[key] = names;
+            for (const name of names) {
+                window._profileKeyByName[name.toLowerCase()] = key;
+                if (/[a-z]/i.test(name)) window._properToCn[name.toLowerCase()] = profile.name_cn;
             }
         }
         console.log('Star poetry loaded:', state.starPoetry.length, 'poems');
@@ -721,6 +730,13 @@ function populateStarCatalog() {
     renderChapterNav();
 }
 
+/** 星表条目 → 档案 star_id；无档案的星返回 null（此时仍走 LLM 动态建档） */
+function profileKeyForStar(star) {
+    if (!star) return null;
+    const map = window._profileKeyByName || {};
+    return map[(star.name_en || '').toLowerCase()] || map[star.name_cn] || null;
+}
+
 /** 选中一颗星并开始探索（星辰库标签 / 五章书页按钮共用） */
 function selectStar(star, triggerEl) {
     // 取消上次选中
@@ -729,7 +745,8 @@ function selectStar(star, triggerEl) {
 
     // 设置搜索框并触发探索
     state.currentStar = star;
-    state.currentStarId = star.id;  // 修复：确保后续请求使用当前选中星
+    // 星表 id 是 HR 编号（如 hr2491），后端档案按 star_id 索引，必须换算后才能取到预置内容
+    state.currentStarId = profileKeyForStar(star) || star.id;
     showStarInfo(star);
     focusOnStar(star);
     const searchInput = document.getElementById('star-search');
@@ -875,7 +892,7 @@ async function initThree() {
     // 恢复用户上次的视图模式（默认 2D 主视图）
     try {
         const saved = localStorage.getItem('tianwen_view_mode');
-        if (['2d', '3d', 'observe'].includes(saved)) state.viewMode = saved;
+        if (['2d', '3d'].includes(saved)) state.viewMode = saved;
     } catch (e) {}
     syncViewButtons();
     setViewMode(state.viewMode);
@@ -1064,7 +1081,7 @@ function buildChineseAsterismLines() {
     const mode = state.viewMode;
     const mat = new THREE.LineBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0, depthTest: false, blending: THREE.AdditiveBlending });
 
-    // 星 → 当前模式场景坐标（2D/今晚投影到 y=0 平面）
+    // 星 → 当前模式场景坐标（2D 投影到 y=0 平面）
     const toScene = (s) => {
         if (mode === '2d') {
             if (!_inHemisphere(s.y)) return null;
@@ -1111,9 +1128,9 @@ function update2DCamera() {
     orthoCamera.updateProjectionMatrix();
 }
 
-/** 切换视图模式：'2d' 极投影星图（主视图）/ '3d' 沉浸星空 / 'observe' 地面观星 */
+/** 切换视图模式：'2d' 极投影星图（主视图）/ '3d' 沉浸星空 */
 function setViewMode(mode) {
-    if (!['2d', '3d', 'observe'].includes(mode)) return;
+    if (!['2d', '3d'].includes(mode)) return;
     if (mode === state.viewMode && viewModeApplied) { syncViewButtons(); return; }
     state.viewMode = mode;
     try { localStorage.setItem('tianwen_view_mode', mode); } catch (e) {}
@@ -1143,36 +1160,6 @@ function setViewMode(mode) {
         buildDsoMarkers();
         buildPlanetMarkers();
         focusTarget = null; focusProgress = 0;
-        _clearObserveOverlays();
-    } else if (mode === 'observe') {
-        // 地面观星：透视相机位于天球球心，朝向由 (方位角, 仰角) 控制
-        camera = new THREE.PerspectiveCamera(observeParams.fov, width / height, 0.1, 5000);
-        camera.position.set(0, 0, 0);
-        orthoCamera = null;
-        _swapComposerCamera();
-        if (starPoints) {
-            const old = starPoints.geometry;
-            starPoints.geometry = buildObserveStarGeometry();
-            old.dispose();
-        }
-        createConstellationLines();
-        buildChineseAsterismLines();
-        if (equatorRing) { skyGroup.remove(equatorRing); equatorRing.geometry.dispose(); equatorRing.material.dispose(); equatorRing = null; }
-        buildObserveHorizon();
-        rebuildFog('observe');
-        if (twinklePoints) twinklePoints.visible = false;
-        clearMeteors();
-        if (tunnelParticles) { scene.remove(tunnelParticles); tunnelParticles = null; }
-        starVeinLines.forEach(l => l.visible = false);
-        focusTarget = null; focusProgress = 0;
-        const od = document.getElementById('observe-compass');
-        if (od) od.style.display = 'block';
-        buildObserveGround();
-        buildObserveSkyGlow();
-        if (!milkyWayPoints) createMilkyWay();
-        milkyWayPoints.visible = true; // 观星夜空带银河
-        buildDsoMarkers();
-        buildPlanetMarkers();
     } else {
         // 2d 正交相机（主视图）
         const south = state.viewHemisphere === 'south';
@@ -1201,32 +1188,16 @@ function setViewMode(mode) {
         targetRotation.x = 0; targetRotation.z = 0; // 2D 只绕极轴旋转
         clearDsoMarkers();
         clearPlanetMarkers();
-        _clearObserveOverlays();
     }
 
     const hb = document.getElementById('hemisphere-btn');
     if (hb) hb.style.display = mode === '2d' ? '' : 'none';
-    const ob = document.getElementById('observe-btn');
-    if (ob) ob.style.display = '';
     updateStageVisual();
     syncViewButtons();
     updateFogState();
     updateBipolarView();
     updateChannelView();
     viewModeApplied = true;
-}
-
-/** 清理观星模式的叠加层（地平圈/罗盘条/地面参照物/大气辉光） */
-function _clearObserveOverlays() {
-    if (observeHorizon) { skyGroup.remove(observeHorizon); observeHorizon.geometry.dispose(); observeHorizon.material.dispose(); observeHorizon = null; }
-    if (observeGround) {
-        skyGroup.remove(observeGround);
-        observeGround.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-        observeGround = null;
-    }
-    if (observeSkyGlow) { skyGroup.remove(observeSkyGlow); observeSkyGlow.geometry.dispose(); observeSkyGlow.material.dispose(); observeSkyGlow = null; }
-    const od = document.getElementById('observe-compass');
-    if (od) od.style.display = 'none';
 }
 
 /** 相机对象更换后，同步 composer 的 RenderPass 相机引用 */
@@ -1243,15 +1214,10 @@ function syncViewButtons() {
         const is3d = state.viewMode === '3d';
         btn.textContent = is3d ? '🪐 2D星图' : '🌌 3D星空';
         btn.setAttribute('aria-pressed', String(is3d));
-        btn.title = state.viewMode === 'observe' ? '返回二维星图' : '切换二维星图/三维星空';
+        btn.title = '切换二维星图/三维星空';
     }
     const hb = document.getElementById('hemisphere-btn');
     if (hb) hb.textContent = state.viewHemisphere === 'south' ? '⬇ 南天极' : '⬆ 北天极';
-    const ob = document.getElementById('observe-btn');
-    if (ob) {
-        ob.textContent = '🔭 地面观星';
-        ob.classList.toggle('active', state.viewMode === 'observe');
-    }
 }
 
 /** 切换南北天极视角（仅 2D 模式） */
@@ -1308,250 +1274,6 @@ function _toJulianDay(y, m, d, hours) {
     const A = Math.floor(y / 100);
     const B = 2 - A + Math.floor(A / 4);
     return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5 + hours / 24;
-}
-
-function _gmstDeg(jd) {
-    const T = (jd - 2451545.0) / 36525;
-    const g = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
-    return ((g % 360) + 360) % 360;
-}
-
-/**
- * 赤经/赤纬 → 地平坐标（弧度）。az 从北起顺时针（N=0, E=90, S=180, W=270）。
- */
-function _altAzFromRaDec(ra, dec, lstDeg, latDeg) {
-    const H = lstDeg * Math.PI / 180 - ra;
-    const lat = latDeg * Math.PI / 180;
-    const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(H);
-    const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
-    if (Math.cos(alt) < 1e-9) return { alt, az: 0 };
-    const cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
-    let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
-    if (Math.sin(H) > 0) az = 2 * Math.PI - az;
-    return { alt, az };
-}
-
-/**
- * HYG 单位向量（r=200，+Y=北天极）→ 地平坐标。
- * 已验证：dec = asin(py/200)，RA = atan2(pz, -px)（与 Polaris/Sirius/Vega 等真值吻合）。
- */
-function starAltAz(px, py, pz, lstDeg, latDeg) {
-    const ra = Math.atan2(pz, -px);
-    const dec = Math.asin(Math.max(-1, Math.min(1, py / SKY_R)));
-    return _altAzFromRaDec(ra, dec, lstDeg, latDeg);
-}
-
-// ==================== 地面观星（纬度带场景，球心相机） ====================
-// 从地球某地的地面视角观星：透视相机位于天球球心，朝向由 (方位角 az, 仰角 alt) 控制，
-// 视场默认 60°（人眼视野）可调 30-80°，拖拽转动视角观察其他方向的天空。
-// 观测者天顶 z=(cos lat, sin lat, 0)，北 n=(-sin lat, cos lat, 0)，东 e=(0,0,1)
-// （已验证：赤道处北=北天极方向；北极处北=天顶）。
-
-const OBSERVE_SITES = [
-    { name: '哈尔滨 · 高纬北', lat: 45.8, lon: 126.5, desc: '北极星高挂头顶，南天几乎不可见' },
-    { name: '上海 · 中纬北', lat: 31.2, lon: 121.5, desc: '经典北半球观星视角' },
-    { name: '新加坡 · 赤道', lat: 1.35, lon: 103.8, desc: '南北天各露出一半' },
-    { name: '悉尼 · 中纬南', lat: -33.9, lon: 151.2, desc: '南十字座高悬' },
-    { name: '乌斯怀亚 · 高纬南', lat: -54.8, lon: -68.3, desc: '南天极在低空' }
-];
-
-let observeParams = { site: 1, lat: 31.2, lon: 121.5, fov: 60, az: 0, alt: 40 * Math.PI / 180 };
-let _observeLstCache = 0;      // 当地恒星时（度）缓存
-let observeHorizon = null;     // 地平圈
-let observeGround = null;      // 地面参照物（草地/山/湖）
-let observeFocusAnim = null;   // 转视角对准星动画
-
-/** 观测者天顶/北/东方向（场景坐标，lat 弧度） */
-function _observeAxes(latRad) {
-    return {
-        z: new THREE.Vector3(Math.cos(latRad), Math.sin(latRad), 0),
-        n: new THREE.Vector3(-Math.sin(latRad), Math.cos(latRad), 0),
-        e: new THREE.Vector3(0, 0, 1)
-    };
-}
-
-/** (az, alt) 弧度 → 场景方向向量 */
-function _observeDir(az, alt, latRad) {
-    const { z, n, e } = _observeAxes(latRad);
-    const dir = new THREE.Vector3(0, 0, 0);
-    dir.addScaledVector(n, Math.cos(az) * Math.cos(alt));
-    dir.addScaledVector(e, Math.sin(az) * Math.cos(alt));
-    dir.addScaledVector(z, Math.sin(alt));
-    return dir;
-}
-
-/** 观星模式当地恒星时（度）：当天日期 + 固定夜晚 21:00（观星场景恒为夜晚） */
-function _observeLstDeg() {
-    const now = new Date();
-    const jd = _toJulianDay(now.getFullYear(), now.getMonth() + 1, now.getDate(), 21 - 8);
-    return ((_gmstDeg(jd) + observeParams.lon) % 360 + 360) % 360;
-}
-
-/** 构建观星星场几何：地平以上（alt>0）的 HYG 球面星，3D 坐标 */
-function buildObserveStarGeometry() {
-    const hyg = window._hygData;
-    _observeLstCache = _observeLstDeg();
-    const visible = [];
-    if (hyg) {
-        for (let i = 0; i < hyg.count; i++) {
-            const { alt } = starAltAz(hyg.px[i], hyg.py[i], hyg.pz[i], _observeLstCache, observeParams.lat);
-            if (alt > 0) visible.push(i);
-        }
-    }
-    state.observeVisible = new Set(visible);
-    const n = visible.length;
-    const positions = new Float32Array(n * 3);
-    const colors = new Float32Array(n * 3);
-    const sizes = new Float32Array(n);
-    visible.forEach((i, k) => {
-        positions[k*3] = hyg.px[i];
-        positions[k*3+1] = hyg.py[i];
-        positions[k*3+2] = hyg.pz[i];
-        const rgb = bvToRgb(hyg.ci[i] || 0.65);
-        colors[k*3]=rgb[0]; colors[k*3+1]=rgb[1]; colors[k*3+2]=rgb[2];
-        sizes[k] = hyg.mag[i];
-    });
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geom.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    return geom;
-}
-
-/** 观星地平圈（过球心，法线为观测者天顶方向，半径略大于星面） */
-function buildObserveHorizon() {
-    if (observeHorizon) { skyGroup.remove(observeHorizon); observeHorizon.geometry.dispose(); observeHorizon.material.dispose(); observeHorizon = null; }
-    const { n, e } = _observeAxes(observeParams.lat * Math.PI / 180);
-    const R = 202;
-    const pts = [];
-    for (let i = 0; i <= 128; i++) {
-        const a = (i / 128) * Math.PI * 2;
-        const v = new THREE.Vector3().addScaledVector(n, Math.cos(a)).addScaledVector(e, Math.sin(a));
-        pts.push(v.multiplyScalar(R));
-    }
-    observeHorizon = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: 0x8ab8ff, transparent: true, opacity: 0.4, depthTest: false })
-    );
-    skyGroup.add(observeHorizon);
-}
-
-/** 观星大气辉光：天球背景壳（r=880），天顶深、地平线微亮，模拟大气散射 */
-let observeSkyGlow = null;
-
-function buildObserveSkyGlow() {
-    if (observeSkyGlow) { skyGroup.remove(observeSkyGlow); observeSkyGlow.geometry.dispose(); observeSkyGlow.material.dispose(); observeSkyGlow = null; }
-    const latRad = observeParams.lat * Math.PI / 180;
-    const { z } = _observeAxes(latRad);
-    // canvas 渐变：v=0（南极，被地面遮挡）深，v=0.5（地平线）微亮，v=1（天顶）深
-    const canvas = document.createElement('canvas');
-    canvas.width = 16; canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    const grad = ctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, 'rgb(6, 10, 18)');
-    grad.addColorStop(0.48, 'rgb(6, 10, 18)');
-    grad.addColorStop(0.52, 'rgb(28, 38, 58)'); // 地平线辉光
-    grad.addColorStop(0.6, 'rgb(14, 20, 34)');
-    grad.addColorStop(1, 'rgb(5, 8, 14)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 16, 256);
-    const tex = new THREE.CanvasTexture(canvas);
-    const glow = new THREE.Mesh(
-        new THREE.SphereGeometry(880, 32, 32, 0, Math.PI * 2, 0, Math.PI),
-        new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthTest: false, transparent: true, opacity: 0.85 })
-    );
-    glow.lookAt(z); // 球壳北极朝天顶（uv v=1 在天顶）
-    skyGroup.add(glow);
-    observeSkyGlow = glow;
-}
-
-/** 观星地面参照物：下半球地面（草原）+ 山形剪影 + 湖泊斑块。
- * 从球心看，地平线以下被地面填满，山/湖提供地表参照。 */
-function buildObserveGround() {
-    if (observeGround) {
-        skyGroup.remove(observeGround);
-        observeGround.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-        observeGround = null;
-    }
-    const latRad = observeParams.lat * Math.PI / 180;
-    const { z } = _observeAxes(latRad);
-    const group = new THREE.Group();
-
-    // 1) 下半球地面：从球心看填满地平线以下视野（暗草原色）
-    const groundMat = new THREE.MeshBasicMaterial({ color: 0x0a1410, side: THREE.BackSide, depthTest: false });
-    const ground = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), groundMat);
-    ground.lookAt(z); // 半球开口朝天顶方向
-    group.add(ground);
-
-    // 2) 山形剪影：沿地平圈分布的山峰（从球心看呈现为远处山影）
-    const mountainMat = new THREE.MeshBasicMaterial({ color: 0x030608, side: THREE.DoubleSide, depthTest: false });
-    const peaks = [
-        { a: 15, h: 14, w: 9 }, { a: 55, h: 9, w: 7 }, { a: 100, h: 17, w: 10 },
-        { a: 150, h: 10, w: 7 }, { a: 205, h: 15, w: 9 }, { a: 255, h: 7, w: 6 }, { a: 305, h: 12, w: 8 }
-    ];
-    const upToZenith = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), z);
-    peaks.forEach(pk => {
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(pk.w, pk.h, 3), mountainMat);
-        const dir = _observeDir(pk.a * Math.PI / 180, 1.2 * Math.PI / 180, latRad);
-        cone.position.copy(dir.clone().multiplyScalar(300));
-        cone.quaternion.copy(upToZenith); // 峰顶朝天顶
-        group.add(cone);
-    });
-
-    // 3) 湖泊斑块：地面上的淡蓝反光椭圆
-    const lakeMat = new THREE.MeshBasicMaterial({ color: 0x1c3d57, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthTest: false });
-    const lake = new THREE.Mesh(new THREE.SphereGeometry(26, 20, 10), lakeMat);
-    const lakeDir = _observeDir(135 * Math.PI / 180, -2.5 * Math.PI / 180, latRad);
-    lake.position.copy(lakeDir.clone().multiplyScalar(298));
-    lake.scale.set(1.4, 0.55, 0.18); // 压扁贴地
-    group.add(lake);
-
-    skyGroup.add(group);
-    observeGround = group;
-}
-
-/** 更新观星方位指示（状态栏文案 + 屏幕底部固定罗盘条，随方位滚动） */
-function updateObserveIndicators() {
-    if (state.viewMode !== 'observe') return;
-    const statusEl = document.getElementById('chat-status');
-    if (statusEl) {
-        const azDeg = ((observeParams.az * 180 / Math.PI) % 360 + 360) % 360;
-        const altDeg = observeParams.alt * 180 / Math.PI;
-        const dirName = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'][Math.round(azDeg / 45) % 8];
-        statusEl.textContent = `🔭 ${OBSERVE_SITES[observeParams.site].name} · ${dirName} ${azDeg.toFixed(0)}° · 仰角 ${altDeg.toFixed(0)}° · 视场 ${observeParams.fov}°（拖动转动视角）`;
-    }
-    // HUD 罗盘条：屏幕底部固定，方位刻度随视角滚动（任何仰角都能定位方向）
-    const compass = document.getElementById('observe-compass');
-    if (!compass) return;
-    const curAz = ((observeParams.az * 180 / Math.PI) % 360 + 360) % 360;
-    compass.innerHTML = '';
-    const dirLabels = { 0: '北 N', 90: '东 E', 180: '南 S', 270: '西 W' };
-    for (let azd = Math.floor(curAz / 15) * 15 - 120; azd <= curAz + 120; azd += 15) {
-        const label = dirLabels[((azd % 360) + 360) % 360];
-        if (!label) continue; // 只显示四正
-        const offset = azd - curAz;
-        const x = 50 + offset * 0.4; // 中心=当前朝向，±120° 映射到罗盘条可见区
-        if (x < 2 || x > 98) continue;
-        const el = document.createElement('div');
-        el.className = 'observe-direction' + (Math.abs(offset) < 8 ? ' observe-cur' : '');
-        el.textContent = label;
-        el.style.left = x + '%';
-        compass.appendChild(el);
-    }
-}
-
-/** 观星聚焦：把相机视角平滑转到目标星的 (方位角, 仰角) */
-function focusObserve(star) {
-    if (!star || star._x === undefined || state.viewMode !== 'observe') return;
-    const { alt, az } = starAltAz(star._x, star._y, star._z, _observeLstCache, observeParams.lat);
-    observeFocusAnim = {
-        startAz: observeParams.az,
-        startAlt: observeParams.alt,
-        targetAz: az,
-        targetAlt: Math.max(-5 * Math.PI / 180, Math.min(90 * Math.PI / 180, alt)),
-        startTime: Date.now(),
-        duration: 900
-    };
 }
 
 function createTwinkleStars() {
@@ -1621,12 +1343,10 @@ function updateStarLabels() {
     // 亮星标签
     const mode = state.viewMode;
     const is2d = mode === '2d';
-    const isObserve = mode === 'observe';
     const isCulture = state.channel === 'culture';
     const bright = [...state.starCatalog]
         .filter(s => s._x !== undefined
             && (is2d ? _inHemisphere(s._y) : true)
-            && (isObserve ? starAltAz(s._x, s._y, s._z, _observeLstCache, observeParams.lat).alt > 0 : true)
             && s.magnitude < 3.5
             && (!isCulture || ASTERISM_META[s.name_en])) // 星象频道只标古人命名的亮星
         .sort((a, b) => (a.magnitude || 99) - (b.magnitude || 99))
@@ -1638,7 +1358,7 @@ function updateStarLabels() {
             const p = projectTo2D(star._x, star._y, star._z);
             wp = new THREE.Vector3(p.x, 0, p.z).applyEuler(new THREE.Euler(0, currentRotation.y, 0));
         } else {
-            // 3D / 观星：直接使用球面坐标（观星相机在球心，自身转向）
+            // 3D：直接使用球面坐标
             wp = new THREE.Vector3(star._x, star._y, star._z)
                 .applyEuler(new THREE.Euler(currentRotation.x, currentRotation.y, currentRotation.z));
         }
@@ -1709,8 +1429,7 @@ function updateStarLabels() {
             def.stars.forEach(function(hr) {
                 var s = starMap ? starMap.get(hr) : null;
                 if (s && s.x !== undefined
-                    && (is2d ? _inHemisphere(s.y) : true)
-                    && (isObserve ? starAltAz(s.x, s.y, s.z, _observeLstCache, observeParams.lat).alt > 0 : true)) {
+                    && (is2d ? _inHemisphere(s.y) : true)) {
                     cx += s.x; cy += s.y; cz += s.z; cnt++;
                 }
             });
@@ -1757,10 +1476,6 @@ function updateStarLabels() {
                 if (!_inHemisphere(s.y)) return;
                 const p = projectTo2D(s.x, s.y, s.z);
                 wp = new THREE.Vector3(p.x, 0, p.z).applyEuler(new THREE.Euler(0, currentRotation.y, 0));
-            } else if (isObserve) {
-                const { alt } = starAltAz(s.x, s.y, s.z, _observeLstCache, observeParams.lat);
-                if (alt <= 0) return;
-                wp = new THREE.Vector3(s.x, s.y, s.z);
             } else {
                 wp = new THREE.Vector3(s.x, s.y, s.z)
                     .applyEuler(new THREE.Euler(currentRotation.x, currentRotation.y, currentRotation.z));
@@ -1986,12 +1701,11 @@ function _dsoTexture(type, color) {
     return DSO_TEXTURES[type];
 }
 
-/** 构建深空天体标记（3D 球面坐标；观星模式过滤地平上；星象频道由 updateChannelView 控制隐藏） */
+/** 构建深空天体标记（3D 球面坐标；星象频道由 updateChannelView 控制隐藏） */
 function buildDsoMarkers() {
     dsoSprites.forEach(s => { skyGroup.remove(s); });
     dsoSprites = [];
     if (!state.dsos || !state.dsos.length) return;
-    const isObserve = state.viewMode === 'observe';
     const TYPE_COLORS = {
         galaxy: 'rgba(140, 190, 255, 0.9)',
         nebula: 'rgba(255, 140, 160, 0.9)',
@@ -2003,10 +1717,6 @@ function buildDsoMarkers() {
         const ra = dso.ra * Math.PI / 180;
         const dec = dso.dec * Math.PI / 180;
         const unit = new THREE.Vector3(-Math.cos(dec) * Math.cos(ra), Math.sin(dec), Math.cos(dec) * Math.sin(ra));
-        if (isObserve) {
-            const { alt } = starAltAz(unit.x * 200, unit.y * 200, unit.z * 200, _observeLstCache, observeParams.lat);
-            if (alt <= 0) return; // 地平以下不显示
-        }
         const r = 210; // 略高于星面
         const pos = unit.clone().multiplyScalar(r);
         const mat = new THREE.SpriteMaterial({
@@ -2091,22 +1801,17 @@ const SATURN_TEX = (function () {
     return new THREE.CanvasTexture(c);
 })();
 
-/** 构建行星标记（观星/3D 模式；地平上才显示；五行星古人可见，两频道都保留） */
+/** 构建行星标记（3D 球面坐标；五行星古人可见，两频道都保留） */
 function buildPlanetMarkers() {
     planetSprites.forEach(s => skyGroup.remove(s));
     planetSprites = [];
     const now = new Date();
     const jd = _toJulianDay(now.getFullYear(), now.getMonth() + 1, now.getDate(), 13); // 21:00 UTC+8
     const T = (jd - 2451545.0) / 36525;
-    const isObserve = state.viewMode === 'observe';
     Object.entries(PLANET_ELEM).forEach(([name, elem]) => {
         const { ra, dec, dist } = _planetRaDec(elem, T);
         const raR = ra * Math.PI / 180, decR = dec * Math.PI / 180;
         const unit = new THREE.Vector3(-Math.cos(decR) * Math.cos(raR), Math.sin(decR), Math.cos(decR) * Math.sin(raR));
-        if (isObserve) {
-            const { alt } = starAltAz(unit.x * 200, unit.y * 200, unit.z * 200, _observeLstCache, observeParams.lat);
-            if (alt <= 0) return; // 地平以下不显示
-        }
         const pos = unit.clone().multiplyScalar(212); // 比 DSO 再高一点
         const map = name === '土星' ? SATURN_TEX : _dsoTexture('planet_' + name, elem.color);
         const mat = new THREE.SpriteMaterial({ map, transparent: true, depthTest: false });
@@ -2280,13 +1985,7 @@ function setupEventListeners() {
         const deltaX = e.clientX - previousMouse.x;
         const deltaY = e.clientY - previousMouse.y;
 
-        if (state.viewMode === 'observe') {
-            // 地面观星：拖拽 = 转动视角（水平=方位角，垂直=仰角，像人转头看天）
-            observeParams.az -= deltaX * 0.005;
-            observeParams.alt -= deltaY * 0.005; // 向下拖 = 视线下移 = 仰角减小（看到地面）
-            observeParams.alt = Math.max(-10 * Math.PI / 180, Math.min(90 * Math.PI / 180, observeParams.alt));
-            observeFocusAnim = null;
-        } else if (state.viewMode === '2d') {
+        if (state.viewMode === '2d') {
             // 极投影图只绕极轴（Y）旋转：地图随手移动
             targetRotation.y -= deltaX * 0.004;
         } else {
@@ -2302,13 +2001,6 @@ function setupEventListeners() {
     // 滚轮缩放
     container.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (state.viewMode === 'observe') {
-            // 视场调节（人眼视野 30-80°）
-            observeParams.fov = Math.max(30, Math.min(80, observeParams.fov + (e.deltaY > 0 ? 2 : -2)));
-            camera.fov = observeParams.fov;
-            camera.updateProjectionMatrix();
-            return;
-        }
         if (state.viewMode !== '3d') {
             if (orthoCamera) {
                 orthoCamera.zoom = Math.max(0.7, Math.min(4, orthoCamera.zoom + (e.deltaY > 0 ? -0.06 : 0.06)));
@@ -2335,7 +2027,7 @@ function setupEventListeners() {
         mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        // 行星优先命中（太阳系天体），其次深空天体（观星/3D 模式）
+        // 行星优先命中（太阳系天体），其次深空天体
         if (planetSprites.length > 0) {
             const planetHits = raycaster.intersectObjects(planetSprites);
             if (planetHits.length > 0) {
@@ -2359,7 +2051,7 @@ function setupEventListeners() {
             const invMatrix = new THREE.Matrix4().makeRotationFromEuler(skyGroup.rotation).invert();
             point.applyMatrix4(invMatrix);
 
-            // 查找最近的恒星（2D/今晚：投影平面距离；3D：空间距离）
+            // 查找最近的恒星（2D：投影平面距离；3D：空间距离）
             let nearestStar = null;
             let minDist = Infinity;
             const is2d = state.viewMode === '2d';
@@ -2430,7 +2122,7 @@ function setupEventListeners() {
         const width = container.clientWidth;
         const height = container.clientHeight;
 
-        if (state.viewMode === '3d' || state.viewMode === 'observe') {
+        if (state.viewMode === '3d') {
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
         } else {
@@ -2440,11 +2132,10 @@ function setupEventListeners() {
         composer.setSize(width, height);
     });
 
-    // 2D/3D 视图切换（observe 模式下点击返回 2D 主视图）
+    // 2D/3D 视图切换
     const viewToggleBtn = document.getElementById('view-toggle-btn');
     if (viewToggleBtn) {
         viewToggleBtn.addEventListener('click', () => {
-            if (state.viewMode === 'observe') { setViewMode('2d'); return; }
             setViewMode(state.viewMode === '2d' ? '3d' : '2d');
         });
     }
@@ -2454,101 +2145,6 @@ function setupEventListeners() {
     if (bgmToggleBtn) {
         bgmToggleBtn.addEventListener('click', toggleBgm);
         updateBgmButton();
-    }
-
-    // ---- 地面观星 ----
-    const observeBtn = document.getElementById('observe-btn');
-    const observeSettings = document.getElementById('observe-settings');
-    if (observeBtn && observeSettings) {
-        observeBtn.addEventListener('click', () => {
-            if (state.viewMode !== 'observe') {
-                setViewMode('observe');
-            } else {
-                observeSettings.style.display = 'block';
-            }
-        });
-    }
-
-    // 观星面板：填充场景下拉
-    const observeSiteSel = document.getElementById('observe-site');
-    if (observeSiteSel) {
-        observeSiteSel.innerHTML = '';
-        OBSERVE_SITES.forEach((s, i) => {
-            const opt = document.createElement('option');
-            opt.value = String(i);
-            opt.textContent = s.name;
-            observeSiteSel.appendChild(opt);
-        });
-        observeSiteSel.value = String(observeParams.site);
-        const descEl = document.getElementById('observe-site-desc');
-        if (descEl) descEl.textContent = OBSERVE_SITES[observeParams.site].desc;
-        observeSiteSel.addEventListener('change', () => {
-            const site = OBSERVE_SITES[parseInt(observeSiteSel.value, 10)];
-            if (descEl) descEl.textContent = site.desc;
-            const latInput = document.getElementById('observe-lat');
-            if (latInput) {
-                latInput.value = String(site.lat);
-                const latVal = document.getElementById('observe-lat-val');
-                if (latVal) latVal.textContent = `${site.lat.toFixed(1)}°`;
-            }
-        });
-    }
-
-    // 纬度 / 视场滑块联动显示
-    const latInput = document.getElementById('observe-lat');
-    if (latInput) {
-        latInput.value = String(observeParams.lat);
-        const latVal = document.getElementById('observe-lat-val');
-        if (latVal) latVal.textContent = `${observeParams.lat.toFixed(1)}°`;
-        latInput.addEventListener('input', () => {
-            if (latVal) latVal.textContent = `${parseFloat(latInput.value).toFixed(1)}°`;
-        });
-    }
-    const fovInput = document.getElementById('observe-fov');
-    if (fovInput) {
-        fovInput.value = String(observeParams.fov);
-        const fovVal = document.getElementById('observe-fov-val');
-        if (fovVal) fovVal.textContent = `${observeParams.fov}°`;
-        fovInput.addEventListener('input', () => {
-            if (fovVal) fovVal.textContent = `${fovInput.value}°`;
-        });
-    }
-
-    // 应用观星设置：重建星场/地平圈/连线，进入或刷新观星模式
-    const observeApply = document.getElementById('observe-apply');
-    if (observeApply && observeSettings) {
-        observeApply.addEventListener('click', () => {
-            const siteIdx = parseInt(observeSiteSel.value, 10);
-            const site = OBSERVE_SITES[siteIdx] || OBSERVE_SITES[1];
-            observeParams.site = siteIdx;
-            observeParams.lat = latInput ? parseFloat(latInput.value) : site.lat;
-            observeParams.lon = site.lon;
-            observeParams.fov = fovInput ? parseInt(fovInput.value, 10) : 60;
-            observeParams.az = 0; // 切换场景重置视角朝北
-            observeParams.alt = 40 * Math.PI / 180;
-            observeFocusAnim = null;
-            if (camera && state.viewMode === 'observe') {
-                camera.fov = observeParams.fov;
-                camera.updateProjectionMatrix();
-            }
-            observeSettings.style.display = 'none';
-            if (state.viewMode === 'observe') {
-                // 原地刷新：重建星场/地平圈/连线/地面
-                _observeLstCache = _observeLstDeg();
-                if (starPoints) {
-                    const old = starPoints.geometry;
-                    starPoints.geometry = buildObserveStarGeometry();
-                    old.dispose();
-                }
-                createConstellationLines();
-                buildChineseAsterismLines();
-                buildObserveHorizon();
-                buildObserveGround();
-                updateFogState();
-            } else {
-                setViewMode('observe');
-            }
-        });
     }
 
     // 南北天极切换（仅 2D）
@@ -2662,15 +2258,10 @@ function animate() {
         targetRotation.z += 0.0002;
     }
 
-    // 平滑旋转（2D/观星聚焦动画期间直接控制 Y，跳过平滑插值）
+    // 平滑旋转（2D/聚焦动画期间直接控制 Y，跳过平滑插值）
     if (state.viewMode === '3d') {
         currentRotation.x += (targetRotation.x - currentRotation.x) * 0.05;
         currentRotation.z += (targetRotation.z - currentRotation.z) * 0.05;
-    } else if (state.viewMode === 'observe') {
-        // 地面观星：相机自身转向，旋转保持归零
-        currentRotation.x = 0;
-        currentRotation.y = 0;
-        currentRotation.z = 0;
     } else {
         currentRotation.x = 0;
         currentRotation.z = 0;
@@ -2679,7 +2270,7 @@ function animate() {
         currentRotation.y += (targetRotation.y - currentRotation.y) * 0.05;
     }
 
-    // 2D/今晚聚焦动画：2D 转星到屏幕上方 + 缩放；今晚仅缩放
+    // 2D 聚焦动画：把目标星转到屏幕上方 + 缩放
     if (state.viewMode !== '3d' && focus2DAnim) {
         const a = focus2DAnim;
         const t = Math.min(1, (Date.now() - a.startTime) / a.duration);
@@ -2692,34 +2283,13 @@ function animate() {
         if (t >= 1) focus2DAnim = null;
     }
 
-    // skyGroup 绕原点旋转（3D 三轴立体感 / 2D 仅绕极轴 / 今晚与观星固定）
+    // skyGroup 绕原点旋转（3D 三轴立体感 / 2D 仅绕极轴）
     if (skyGroup) {
         if (state.viewMode === '3d') {
             skyGroup.rotation.set(currentRotation.x, currentRotation.y, currentRotation.z);
-        } else if (state.viewMode === '2d') {
-            skyGroup.rotation.set(0, currentRotation.y, 0);
         } else {
-            skyGroup.rotation.set(0, 0, 0);
+            skyGroup.rotation.set(0, currentRotation.y, 0);
         }
-    }
-
-    // 地面观星：球心相机朝向 (方位角, 仰角)，聚焦动画平滑转动
-    if (state.viewMode === 'observe') {
-        if (observeFocusAnim) {
-            const a = observeFocusAnim;
-            const t = Math.min(1, (Date.now() - a.startTime) / a.duration);
-            const ease = easeInOutCubic(t);
-            observeParams.az = a.startAz + (a.targetAz - a.startAz) * ease;
-            observeParams.alt = a.startAlt + (a.targetAlt - a.startAlt) * ease;
-            if (t >= 1) observeFocusAnim = null;
-        }
-        const latRad = observeParams.lat * Math.PI / 180;
-        const dir = _observeDir(observeParams.az, observeParams.alt, latRad);
-        const { z } = _observeAxes(latRad);
-        // 画面上方 = 观测者天顶方向（lat=0 且看向天顶时退化，用北天极兜底）
-        camera.up.copy(Math.abs(z.dot(dir)) > 0.95 ? new THREE.Vector3(0, 1, 0) : z);
-        camera.lookAt(dir.clone());
-        updateObserveIndicators();
     }
 
     // 聚焦追踪：相机保持在目标星外侧，距离可滚轮缩放（仅 3D）
@@ -2800,7 +2370,7 @@ function updateStageVisual() {
     if (stage < 2 || stage > 7) return;
 
     const group = new THREE.Group();
-    // 2D：光环在投影平面（y=0）上，环面朝相机；3D/观星：环面朝星体方向
+    // 2D：光环在投影平面（y=0）上，环面朝相机；3D：环面朝星体方向
     if (state.viewMode === '2d') {
         const p = projectTo2D(star._x, star._y, star._z);
         group.position.set(p.x, 0, p.z);
@@ -2882,40 +2452,9 @@ window.__debugView = () => {
         asterLines: chineseAsterismLines.length,
         starTint: window._starShaderMaterial ? window._starShaderMaterial.uniforms.uChannelTint.value.toArray().map(v => Math.round(v * 100) / 100) : null,
         fogColor: fogMesh ? '#' + fogMesh.material.uniforms.uFogColor.value.getHexString() : 'none',
-        observe: {
-            az: Math.round(((observeParams.az * 180 / Math.PI) % 360 + 360) % 360),
-            alt: Math.round(observeParams.alt * 180 / Math.PI),
-            fov: observeParams.fov,
-            site: OBSERVE_SITES[observeParams.site] ? OBSERVE_SITES[observeParams.site].name : '?',
-            lat: Math.round(observeParams.lat * 10) / 10,
-            lon: Math.round(observeParams.lon * 10) / 10,
-            camPos: camera ? camera.position.toArray().map(v => Math.round(v * 10) / 10) : null,
-            hasGround: !!observeGround,
-            hasGlow: !!observeSkyGlow,
-            milkyWayVisible: !!milkyWayPoints && milkyWayPoints.visible,
-            dsoCount: dsoSprites.length,
-            planetCount: planetSprites.length,
-            dsoHiddenInCulture: dsoSprites.length > 0 && dsoSprites.every(s => !s.visible),
-            starMinBrightnes: window._starShaderMaterial ? window._starShaderMaterial.uniforms.starMinBrightnes.value : null
-        }
+        dsoCount: dsoSprites.length,
+        planetCount: planetSprites.length
     };
-};
-
-// 调试访问器：任意 HR 星在当前观星/今晚视角下的地平坐标（供自动化验证）
-window.__debugStarAltAz = (hr) => {
-    const s = state.starCatalog.find(x => x.hr === hr);
-    if (!s) return null;
-    const lst = _observeLstCache;
-    const lat = observeParams.lat;
-    const { alt, az } = starAltAz(s._x, s._y, s._z, lst, lat);
-    return { alt: Math.round(alt * 180 / Math.PI), az: Math.round(az * 180 / Math.PI) };
-};
-
-// 调试访问器：设置观星视角（度），供自动化测试
-window.__debugSetObserve = (azDeg, altDeg) => {
-    observeParams.az = azDeg * Math.PI / 180;
-    observeParams.alt = altDeg * Math.PI / 180;
-    observeFocusAnim = null;
 };
 
 // 调试访问器：DSO/行星标记状态
@@ -2967,26 +2506,10 @@ function applyStageAnimation(time) {
 function focusOnStar(star) {
     if (!star || star._x === undefined) return;
 
-    // 地面观星：转动视角对准该星（像人抬头看那颗星）
-    if (state.viewMode === 'observe') {
-        focusObserve(star);
-        return;
-    }
-
-    // 平面视图：2D 转到屏幕上方 + 缩放；今晚星空仅缩放（方位固定）
+    // 2D：把目标星转到屏幕正上方并放大
     if (state.viewMode !== '3d') {
         if (!orthoCamera) return;
-        if (state.viewMode === '2d') {
-            focus2D(star);
-        } else {
-            focus2DAnim = {
-                targetY: currentRotation.y,
-                startY: currentRotation.y,
-                startZoom: orthoCamera.zoom,
-                startTime: Date.now(),
-                duration: 600
-            };
-        }
+        focus2D(star);
         return;
     }
 
@@ -3098,21 +2621,7 @@ function rebuildFog(mode) {
         uFogColor: { value: new THREE.Color(0x0a0a14) }
     };
 
-    if (mode === 'observe') {
-        // 球心视角：雾壳紧贴星面（r=205），从球心看覆盖星点，觉醒星周围散开
-        const geometry = new THREE.SphereGeometry(205, 48, 48);
-        const material = new THREE.ShaderMaterial({
-            vertexShader: FOG_VERTEX_SHADER,
-            fragmentShader: FOG_FRAGMENT_SHADER,
-            uniforms: Object.assign({}, uniforms, { uFogRadius: { value: 55 } }),
-            transparent: true,
-            depthTest: false,
-            depthWrite: false,
-            side: THREE.BackSide,
-            blending: THREE.NormalBlending
-        });
-        fogMesh = new THREE.Mesh(geometry, material);
-    } else if (mode === '2d') {
+    if (mode === '2d') {
         // 平面遮罩：覆盖整张星图，略高于星点平面（y=6），面朝 +Y 相机
         const size = R2D * 2 * P2D_FIT;
         const geometry = new THREE.PlaneGeometry(size, size);
@@ -3468,7 +2977,7 @@ function unlockHint(data) {
     return '继续追问以解锁更多探索方向';
 }
 
-async function sendMessage(content, starId = null, decision = null, action = 'initial') {
+async function sendMessage(content, starId = null, decision = null, action = 'initial', usePreset = false) {
     if (state.isLoading) return;
 
     if (!starId) starId = state.currentStarId || (state.currentStar ? state.currentStar.id : null);
@@ -3483,10 +2992,10 @@ async function sendMessage(content, starId = null, decision = null, action = 'in
     try {
         const body = {
             content: content || '',
-            model: 'minimax',
             action
         };
 
+        if (usePreset) body.use_preset = true;
         if (state.sessionId) body.session_id = state.sessionId;
         body.star_id = starId;
         if (decision) body.decision = decision;
@@ -3542,6 +3051,10 @@ function handleChatResponse(data) {
         if (data.soft_hint) {
             statusEl.textContent += ' · ' + data.soft_hint;
         }
+        // 降级说明：AI 服务不可用时改用档案预置内容，如实告知而不是假装是生成的
+        if (data.degraded) {
+            statusEl.textContent += ' ⚠ ' + data.degraded;
+        }
         showOverlayDialogue(data.science_response, data.culture_response);
         showQuestionInput(data.suggested_questions || []);
         return;
@@ -3595,17 +3108,7 @@ function resolveStarPosition(starId) {
         };
     }
     // 在星图目录中查找对应中文名/英文名
-    const profileMap = {
-        'polaris': ['北极星', 'Polaris'],
-        'big_dipper': ['北斗七星', 'Big Dipper'],
-        'betelgeuse': ['参宿四', 'Betelgeuse'],
-        'antares': ['心宿二', 'Antares'],
-        'altair_vega': ['牛郎星', 'Altair', '织女星', 'Vega'],
-        'sirius': ['天狼星', 'Sirius'],
-        'canopus': ['老人星', 'Canopus'],
-        'arcturus': ['大角星', 'Arcturus']
-    };
-    const names = profileMap[starId] || [];
+    const names = (window._profileNamesById || {})[starId] || [];
     const found = state.starCatalog.find(s =>
         names.includes(s.name_cn) || names.includes(s.name_en)
     );
@@ -3744,24 +3247,14 @@ async function sendQuestion() {
     const content = input.value.trim();
     if (!content) return;
 
-    // 档案预置答案：点开推荐问题时瞬时显示双导师答复（不走 LLM、不走网络、不弹全屏浮层）
-    const profile = state.starProfiles[state.currentStarId];
-    const preset = profile && profile.sample_answers && profile.sample_answers[content];
-    if (preset && preset.science && preset.culture) {
-        input.value = '';
-        showMessages(preset.science, preset.culture);
-        const statusEl = document.getElementById('chat-status');
-        if (statusEl) statusEl.textContent = '追问已收到';
-        // 不折叠输入区：推荐问题保持可见，支持连续点击
-        return;
-    }
-
     input.value = '';
     collapseQuestionInput();
     state.questionCount++;
     checkAchievements(); // 累计追问成就（故事框架3.3）
     maybeDropFragment(state.currentStarId);
-    await sendMessage(content, null, null, 'question');
+    // use_preset：命中档案预置问答时后端直接秒回，不命中才走 LLM。
+    // 必须经后端，否则 questions_asked 与认知节点不会更新（节点点亮是核心机制）。
+    await sendMessage(content, null, null, 'question', true);
 }
 
 function showResonance(text) {
@@ -3772,7 +3265,7 @@ function showResonance(text) {
     container.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'message-card resonance-card';
-    card.innerHTML = `<div class="agent" style="color:var(--culture)">星辰共鸣</div><div class="content-wrapper"><div class="content">${text.replace(/\n/g, '<br>')}</div></div>`;
+    card.innerHTML = `<div class="agent" style="color:var(--culture)">星辰共鸣</div><div class="content-wrapper"><div class="content">${nl2br(text)}</div></div>`;
     container.appendChild(card);
 }
 
@@ -3812,9 +3305,9 @@ function showFinalArchive(data) {
     div.innerHTML = `
         <div class="archive-title">✧ 星辰启示录 ✧</div>
         <div class="content archive-body">
-            <p><strong>${data.star_name || ''}</strong></p>
-            <p style="color: rgba(255,215,0,0.8); font-style: italic;">${resonanceClean.replace(/\n/g, '<br>')}</p>
-            <p style="margin-top: 15px; color: var(--text-dim);">我的感悟：${(data.personal_note || '').replace(/\n/g, '<br>')}</p>
+            <p><strong>${escapeHtml(data.star_name)}</strong></p>
+            <p style="color: rgba(255,215,0,0.8); font-style: italic;">${nl2br(resonanceClean)}</p>
+            <p style="margin-top: 15px; color: var(--text-dim);">我的感悟：${nl2br(data.personal_note)}</p>
             ${statsHtml}
             ${quizScoreHtml}
         </div>
@@ -4155,7 +3648,23 @@ function hideSpotlight() {
 }
 
 /* ==================== 追问引导（知识串联） ==================== */
-// 从导师回答文本中提取「追问：xxx」标记，返回 { text, followUp }
+// 导师回答与用户感悟都会进 innerHTML（感悟还会存进 localStorage 反复渲染），
+// 统一先转义再插入；换行靠 .content 的 white-space: pre-wrap 呈现。
+function escapeHtml(s) {
+    return String(s === undefined || s === null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/** 转义后把换行还原为 <br>，用于没有 pre-wrap 的容器 */
+function nl2br(s) {
+    return escapeHtml(s).replace(/\n/g, '<br>');
+}
+
+/** 从导师回答文本中提取「追问：xxx」标记，返回 { text, followUp } */
 function extractFollowUp(text) {
     if (!text) return { text: '', followUp: null };
     // 优先「追问：」标记（LLM 实时答案）
@@ -4178,7 +3687,7 @@ function renderFollowUpButton(container, followUp) {
     if (!followUp) return;
     const btn = document.createElement('div');
     btn.className = 'follow-up-btn';
-    btn.innerHTML = `<span class="fu-icon">🔗</span><span class="fu-text">追问：${followUp}</span>`;
+    btn.innerHTML = `<span class="fu-icon">🔗</span><span class="fu-text">追问：${escapeHtml(followUp)}</span>`;
     btn.title = '点击继续追问';
     btn.onclick = () => {
         hideSpotlight();
@@ -4202,23 +3711,18 @@ function startTypewriter() {
         if (!typewriterState.isTyping) return;
 
         if (typewriterState.charIndex < typewriterState.fullText.length) {
-            // 处理HTML标签 - 一次性添加标签内容
-            const remaining = typewriterState.fullText.substring(typewriterState.charIndex);
-            const tagMatch = remaining.match(/^<[^>]+>/);
+            // 逐字追加纯文本；光标单独建节点，避免把用户/模型文本当 HTML 解析
+            typewriterState.displayedText += typewriterState.fullText[typewriterState.charIndex];
+            typewriterState.charIndex++;
 
-            if (tagMatch) {
-                typewriterState.displayedText += tagMatch[0];
-                typewriterState.charIndex += tagMatch[0].length;
-            } else {
-                typewriterState.displayedText += remaining[0];
-                typewriterState.charIndex++;
-            }
-
-            contentEl.innerHTML = typewriterState.displayedText + '<span class="cursor"></span>';
+            contentEl.textContent = typewriterState.displayedText;
+            const cursor = document.createElement('span');
+            cursor.className = 'cursor';
+            contentEl.appendChild(cursor);
             typewriterState.timer = setTimeout(typeNext, typewriterState.speed);
         } else {
             // 打字完成
-            contentEl.innerHTML = typewriterState.displayedText;
+            contentEl.textContent = typewriterState.displayedText;
             typewriterState.isTyping = false;
             if (typewriterState.onComplete) {
                 typewriterState.onComplete();
@@ -4235,7 +3739,7 @@ function skipTypewriter() {
         const contentElId = typewriterState.contentElId || 'active-content';
         const contentEl = document.getElementById(contentElId);
         if (contentEl) {
-            contentEl.innerHTML = typewriterState.fullText;
+            contentEl.textContent = typewriterState.fullText;
         }
         typewriterState.isTyping = false;
         if (typewriterState.onComplete) {
@@ -4263,36 +3767,17 @@ function showMessages(science, culture) {
 
     const scienceDiv = document.createElement('div');
     scienceDiv.className = 'message-card science';
-    scienceDiv.innerHTML = `<div class="agent">开普勒</div><div class="content-wrapper"><div class="content">${sci.text}</div></div>`;
+    scienceDiv.innerHTML = `<div class="agent">开普勒</div><div class="content-wrapper"><div class="content">${escapeHtml(sci.text)}</div></div>`;
 
     const cultureDiv = document.createElement('div');
     cultureDiv.className = 'message-card culture';
-    cultureDiv.innerHTML = `<div class="agent">甘德</div><div class="content-wrapper"><div class="content">${cul.text}</div></div>`;
+    cultureDiv.innerHTML = `<div class="agent">甘德</div><div class="content-wrapper"><div class="content">${escapeHtml(cul.text)}</div></div>`;
 
     container.appendChild(scienceDiv);
     container.appendChild(cultureDiv);
 
     // 追问按钮（优先甘德的追问，其次开普勒的）
     renderFollowUpButton(container, cul.followUp || sci.followUp);
-}
-
-function showFinalMessage(content) {
-    const container = document.getElementById('chat-messages');
-    container.innerHTML = '';
-
-    const div = document.createElement('div');
-    div.className = 'message-card archive-card';
-    div.innerHTML = `
-        <div class="archive-title">✧ 星辰启示录 ✧</div>
-        <div class="content archive-body">${content.replace(/\n/g, '<br>')}</div>
-        <div class="archive-actions">
-            <button onclick="saveArchiveAndContinue()" class="btn btn-culture">保存档案</button>
-            <button onclick="continueExploring()" class="btn btn-science">继续探索</button>
-        </div>
-        <div id="save-confirm" class="save-confirm-text" style="display: none;">✓ 启示录已保存到档案</div>
-    `;
-
-    container.appendChild(div);
 }
 
 window.closeArchive = function() {
@@ -4310,16 +3795,6 @@ window.closeArchive = function() {
     state.phase = 'welcome';
     state.currentStar = null;
     state.currentStarId = null;
-};
-
-window.saveArchiveAndContinue = function() {
-    document.getElementById('save-confirm').style.display = 'block';
-    // 更新觉醒计数
-    if (state.currentStar) {
-        state.awakenedCount++;
-        state.currentStar = null;
-    }
-    checkAchievements();
 };
 
 window.continueExploring = function() {
@@ -4382,7 +3857,7 @@ function showError(msg) {
     container.innerHTML = '';
     const div = document.createElement('div');
     div.className = 'message-card error-card';
-    div.innerHTML = `<div class="agent">错误</div><div class="content-wrapper"><div class="content">${msg}</div></div>`;
+    div.innerHTML = `<div class="agent">错误</div><div class="content-wrapper"><div class="content">${escapeHtml(msg)}</div></div>`;
     container.appendChild(div);
     state.isLoading = false;
 }
@@ -4693,21 +4168,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 发送按钮
     function resolveStarIdByInput(input) {
-        const map = {
-            '北极星': 'polaris', 'polaris': 'polaris',
-            '北斗七星': 'big_dipper', 'big dipper': 'big_dipper', '天上的勺子': 'big_dipper',
-            '参宿四': 'betelgeuse', 'betelgeuse': 'betelgeuse', '猎户座': 'betelgeuse',
-            '心宿二': 'antares', 'antares': 'antares', '天蝎座': 'antares',
-            '牛郎织女': 'altair_vega', '牛郎星': 'altair_vega', '织女星': 'altair_vega',
-            'altair': 'altair_vega', 'vega': 'altair_vega',
-            '天狼星': 'sirius', 'sirius': 'sirius',
-            '老人星': 'canopus', 'canopus': 'canopus', '南极老人': 'canopus',
-            '大角星': 'arcturus', 'arcturus': 'arcturus'
+        // 档案正式名与别名由 _profileKeyByName 提供，这里只留口语叫法
+        const alias = {
+            '天上的勺子': 'big_dipper',
+            '猎户座': 'betelgeuse',
+            '天蝎座': 'antares',
+            '南极老人': 'canopus',
         };
         const key = input.trim().toLowerCase();
-        if (map[key]) return map[key];
-        // 未知星：用输入名称生成ID，让 MiniMax 动态回答
-        return 'star_' + key.replace(/\s+/g, '_').replace(/[^a-z0-9_一-鿿]/gi, '');
+        return (window._profileKeyByName || {})[key] || alias[key]
+            // 未知星：用输入名称生成ID，让 MiniMax 动态回答
+            || 'star_' + key.replace(/\s+/g, '_').replace(/[^a-z0-9_一-鿿]/gi, '');
     }
 
     document.getElementById('send-btn').addEventListener('click', () => {
@@ -4841,7 +4312,6 @@ async function sendBlend(balance) {
             action: 'blend',
             star_id: starId,
             content: '',
-            model: 'minimax',
             fusion_balance: balance
         };
         if (state.sessionId) body.session_id = state.sessionId;
@@ -4904,7 +4374,6 @@ async function sendQuiz(starId) {
             action: 'quiz',
             star_id: starId,
             content: '',
-            model: 'minimax',
             fragments: state.fragments || [],
             force_llm: true
         };

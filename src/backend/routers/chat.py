@@ -54,17 +54,33 @@ def _clean_self_talk(text: str) -> str:
 # 加载星辰专属档案
 PROFILES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
 _profiles_cache = None
+_profiles_stamp = None
+_profiles_warned = False
 
 
 def _load_profiles():
-    global _profiles_cache
-    if _profiles_cache is None:
-        profile_file = os.path.join(PROFILES_DIR, "star_profiles.json")
+    """按文件指纹缓存档案：改完 star_profiles.json 刷新页面即可生效。
+
+    读取失败只让当次返回空，绝不把失败结果缓存下来——否则一次手滑写坏 JSON，
+    服务不重启就再也取不到任何档案，所有星辰会静默退化成无档案星。"""
+    global _profiles_cache, _profiles_stamp, _profiles_warned
+    profile_file = os.path.join(PROFILES_DIR, "star_profiles.json")
+    try:
+        stamp = os.path.getmtime(profile_file)
+    except OSError:
+        return {}
+    if _profiles_cache is None or stamp != _profiles_stamp:
         try:
             with open(profile_file, "r", encoding="utf-8") as f:
-                _profiles_cache = json.load(f)
-        except Exception:
-            _profiles_cache = {}
+                loaded = json.load(f)
+            _profiles_cache = loaded
+            _profiles_stamp = stamp
+            _profiles_warned = False
+        except Exception as e:
+            if not _profiles_warned:
+                print(f"star_profiles.json 读取失败，暂用上一份档案：{e}")
+                _profiles_warned = True
+            return _profiles_cache or {}
     return _profiles_cache
 
 
@@ -185,6 +201,24 @@ def _match_cognitive_nodes(question: str, profile: dict) -> list[str]:
     return lit
 
 
+def _strip_code_fence(text: str) -> str:
+    """剥掉模型给 JSON 包的 ```json 围栏。
+
+    MiniMax-M3 即使被要求"只输出 JSON"也会加围栏，直接 json.loads 会抛异常，
+    而两处调用点都把异常当成"模型没答好"静默兜底，结果是出题和语义分类永远走预置/关键词，
+    看日志也看不出来。"""
+    t = (text or "").strip()
+    if not t.startswith("```"):
+        return t
+    first_nl = t.find("\n")
+    if first_nl != -1:
+        t = t[first_nl + 1:]
+    t = t.rstrip()
+    if t.endswith("```"):
+        t = t[:-3]
+    return t.strip()
+
+
 async def _match_cognitive_nodes_llm(question: str, profile: dict, api_key: str) -> list[str]:
     """用 LLM 做语义节点分类（第 3 条）：学生问"它会不会变"也能命中"演化"类节点。
     跨维度问题可同时命中多个节点；失败时返回空列表，由关键词匹配兜底。"""
@@ -214,11 +248,82 @@ async def _match_cognitive_nodes_llm(question: str, profile: dict, api_key: str)
             "你是认知分类器，只输出 JSON 数组。",
             max_tokens=64,  # 分类输出很短，控制成本
         )
-        ids = json.loads(result.strip())
+        ids = json.loads(_strip_code_fence(result))
         valid = [i for i in ids if any(n["id"] == i for n in nodes)]
         return valid
     except Exception:
         return []
+
+
+# 预置问答选取：命中已点亮认知节点的关键词加成，以及"最低可信分数"。
+# 真匹配的得分实测都在 0.25 以上，纯巧合共享一两个字的在 0.09 以下。
+_NODE_MATCH_BONUS = 0.25
+_SAMPLE_MIN_SCORE = 0.2
+
+
+def _bigram_overlap(a: str, b: str) -> float:
+    """字符二元组重合度（0~1），用于把学生即兴提问映射到最贴近的预置问题。
+
+    问句都很短，分词的收益抵不上这份实现的稳定与零依赖。"""
+    ga = {a[i:i + 2] for i in range(len(a) - 1)}
+    gb = {b[i:i + 2] for i in range(len(b) - 1)}
+    if not gb:
+        return 0.0
+    return len(ga & gb) / len(gb)
+
+
+def _opening_fallback(profile: dict | None):
+    """开场白的降级答复：把档案里手写的科学与文化条目拼成两位导师的介绍词。
+
+    只取 `what` 会让科学官只说一句 18 字短话（北极星），跟太史令的 56 字严重不对称，
+    看起来像坏了一半；what+why+wow 与 story+poetry 拼起来才接近真实生成的一轮长度。"""
+    if not profile:
+        return None
+    sci = profile.get("science") or {}
+    cul = profile.get("culture") or {}
+    science = "\n".join(
+        p.strip() for p in (sci.get("what"), sci.get("why"), sci.get("wow")) if p and p.strip()
+    )
+    culture = "\n".join(
+        p.strip() for p in (cul.get("story"), cul.get("poetry")) if p and p.strip()
+    )
+    return (science, culture) if science and culture else None
+
+
+def _question_fallback(question: str, profile: dict | None, lit_nodes: list[str]):
+    """追问的降级答复：从档案预置问答里挑一条最贴近的作答。
+
+    打分 = 与预置问题的字符二元组重合度 + 命中已点亮认知节点关键词的加成。
+    只用字面重合会被"为什么/是什么"这类疑问框架词带偏，只用节点关键词又接不住
+    "离我们有多远"这种口语说法，所以两路都要。
+    分数低于 _SAMPLE_MIN_SCORE 说明只是碰巧共享了一两个字（如学生问"它会不会灭掉"，
+    档案里根本没有对应问题），此时退回档案介绍，也不挂着「对应问题」答非所问。
+    无档案星没有可替换内容，返回 None 由调用方放出原始错误。"""
+    if not profile:
+        return None
+    samples = profile.get("sample_answers") or {}
+    if samples:
+        node_kws = [
+            kw
+            for n in profile.get("cognitive_nodes", [])
+            if n.get("id") in lit_nodes
+            for kw in n.get("keywords", [])
+        ]
+        best, best_score = None, _SAMPLE_MIN_SCORE
+        for q in samples:
+            score = _bigram_overlap(question, q) + (
+                _NODE_MATCH_BONUS if any(kw in q for kw in node_kws) else 0.0
+            )
+            if score > best_score:
+                best, best_score = q, score
+        if best:
+            pair = samples[best]
+            science = pair.get("science", "").strip()
+            culture = pair.get("culture", "").strip()
+            if science and culture:
+                return science, culture, best
+    opening = _opening_fallback(profile)
+    return (opening[0], opening[1], None) if opening else None
 
 
 def _build_agent_prompt(profile: dict, agent_type: Literal["science", "culture"]) -> str:
@@ -247,7 +352,8 @@ def _build_agent_prompt(profile: dict, agent_type: Literal["science", "culture"]
 3. 不要堆砌公式和专业术语；
 4. 专注于{'科学角度' if agent_type == 'science' else '文化角度'}，不越界；
 5. 直接给出最终回答，不要写出内心独白、思考过程、自言自语；
-6. 结尾另起一行，用固定格式给出一个能勾起好奇、可延伸新知识的追问问题：先写「追问：」三个字，再写具体问题（例如「追问：想知道它为什么掉不下来吗？」）。问题要具体、能自然引出下一个知识点，不要用"你觉得呢"这类空洞问题。"""
+6. 不要用任何 Markdown 标记（**加粗**、# 标题、- 列表、`代码`都不要），前端按纯文本显示，星号和井号会原样露出来；换行分段即可；
+7. 结尾另起一行，用固定格式给出一个能勾起好奇、可延伸新知识的追问问题：先写「追问：」三个字，再写具体问题（例如「追问：想知道它为什么掉不下来吗？」）。问题要具体、能自然引出下一个知识点，不要用"你觉得呢"这类空洞问题。"""
 
 
 def _generate_suggested_questions(star_id: str, lit_nodes: set[str]) -> list[str]:
@@ -292,13 +398,13 @@ class ChatRequest(BaseModel):
     content: str = ""
     session_id: Optional[str] = None
     star_id: Optional[str] = None
-    api_key: Optional[str] = None
     # blend：罗盘融合（主流程）；quiz：觉醒前小测验出题
     action: Literal["initial", "question", "awaken", "blend", "quiz"] = "initial"
     decision: Optional[Literal["science", "history", "compare"]] = None
     fusion_balance: Optional[float] = None
     fragments: Optional[list] = None  # 星空异动碎片（name+desc），供 quiz 出题参考
     force_llm: Optional[bool] = False  # 强制 LLM 动态出题（跳过预置优先，用于动态性恢复）
+    use_preset: Optional[bool] = False  # question：优先用档案预置问答秒回（不经 LLM）
 
 
 # ==================== Helpers ====================
@@ -402,11 +508,22 @@ async def _chat_initial(req, session, sp, profile, star_id, science_prompt, cult
     opening_question = f"请为初中生介绍{star_display}。科学官讲它是什么、为什么重要；太史令讲古人怎么看它。"
     messages = [{"role": "user", "content": opening_question}]
 
-    science_task = _call_agent(messages, science_prompt, api_key)
-    culture_task = _call_agent(messages, culture_prompt, api_key)
-    science_result, culture_result = await asyncio.gather(science_task, culture_task)
-    science_result = _clean_self_talk(science_result)
-    culture_result = _clean_self_talk(culture_result)
+    science_result, culture_result = await asyncio.gather(
+        _call_agent(messages, science_prompt, api_key),
+        _call_agent(messages, culture_prompt, api_key),
+        return_exceptions=True,  # 两位导师往往会同时失败，避免第二个异常无人回收
+    )
+    degraded = ""
+    if isinstance(science_result, BaseException) or isinstance(culture_result, BaseException):
+        fallback = _opening_fallback(profile)
+        if not fallback:
+            # 无档案星没有可替换内容：放出原始错误，不用空话掩盖故障
+            raise science_result if isinstance(science_result, BaseException) else culture_result
+        science_result, culture_result = fallback
+        degraded = "AI 服务暂时不可用，这段介绍取自星辰档案的预置文案。"
+    else:
+        science_result = _clean_self_talk(science_result)
+        culture_result = _clean_self_talk(culture_result)
 
     session.context["science_response"] = science_result
     session.context["culture_response"] = culture_result
@@ -417,6 +534,7 @@ async def _chat_initial(req, session, sp, profile, star_id, science_prompt, cult
     resp.update({
         "science_response": science_result,
         "culture_response": culture_result,
+        "degraded": degraded,
         "message": _get_transition_text(Stage.REVEALED, star_id, profile),
     })
     store.save(session.id)
@@ -434,8 +552,16 @@ async def _chat_question(req, session, sp, profile, star_id, science_prompt, cul
     sp.questions_asked += 1
 
     cached = _QUESTION_CACHE.get(star_id, {}).get(user_question)
+    if not cached and req.use_preset and profile:
+        # 前端点开推荐问题时带 use_preset：档案预置问答秒回且不消耗额度。
+        # 仍要走完本函数，把 questions_asked / lit_nodes 记进会话——
+        # 若由前端直接展示预置文案，认知节点就永远点不亮。
+        preset = (profile.get("sample_answers") or {}).get(user_question)
+        if preset and preset.get("science") and preset.get("culture"):
+            cached = preset
     messages = [{"role": "user", "content": user_question}]
     new_nodes = []
+    degraded = ""
 
     if cached:
         # 缓存命中：跳过 LLM，节点匹配用关键词兜底
@@ -444,25 +570,40 @@ async def _chat_question(req, session, sp, profile, star_id, science_prompt, cul
         if profile:
             new_nodes = _match_cognitive_nodes(user_question, profile)
     else:
-        science_task = _call_agent(messages, science_prompt, api_key)
-        culture_task = _call_agent(messages, culture_prompt, api_key)
+        tasks = [
+            _call_agent(messages, science_prompt, api_key),
+            _call_agent(messages, culture_prompt, api_key),
+        ]
         if profile:
             # 认知分类与双导师回答并行，降低延迟
-            classify_task = _match_cognitive_nodes_llm(user_question, profile, api_key)
-            science_result, culture_result, new_nodes = await asyncio.gather(
-                science_task, culture_task, classify_task
-            )
-            if not new_nodes:
+            tasks.append(_match_cognitive_nodes_llm(user_question, profile, api_key))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        science_result, culture_result = results[0], results[1]
+        new_nodes = results[2] if profile and not isinstance(results[2], BaseException) else []
+
+        if isinstance(science_result, BaseException) or isinstance(culture_result, BaseException):
+            if profile and not new_nodes:
                 new_nodes = _match_cognitive_nodes(user_question, profile)
+            fallback = _question_fallback(user_question, profile, new_nodes)
+            if not fallback:
+                # 无档案星没有可替换内容：放出原始错误，不用空话掩盖故障
+                raise science_result if isinstance(science_result, BaseException) else culture_result
+            science_result, culture_result, answered_from = fallback
+            degraded = (
+                f"AI 服务暂时不可用，下面按档案预置问答作答（对应问题：{answered_from}）。"
+                if answered_from else
+                "AI 服务暂时不可用，该星暂无对应预置问答，改用档案介绍作答。"
+            )
         else:
-            science_result, culture_result = await asyncio.gather(science_task, culture_task)
-        science_result = _clean_self_talk(science_result)
-        culture_result = _clean_self_talk(culture_result)
-        # 写入运行时缓存（跨 session 复用）
-        _QUESTION_CACHE.setdefault(star_id, {})[user_question] = {
-            "science": science_result,
-            "culture": culture_result,
-        }
+            science_result = _clean_self_talk(science_result)
+            culture_result = _clean_self_talk(culture_result)
+            if not new_nodes and profile:
+                new_nodes = _match_cognitive_nodes(user_question, profile)
+            # 只缓存真实生成的答案：降级内容一旦入缓存，额度恢复后也不会再生成
+            _QUESTION_CACHE.setdefault(star_id, {})[user_question] = {
+                "science": science_result,
+                "culture": culture_result,
+            }
 
     # 认知节点统计（含追问类型维度统计）
     if profile:
@@ -495,6 +636,7 @@ async def _chat_question(req, session, sp, profile, star_id, science_prompt, cul
     resp.update({
         "science_response": science_result,
         "culture_response": culture_result,
+        "degraded": degraded,
         "decision_required": False,  # 五步循环：无抉择门槛，直接可拖罗盘融合
         "soft_hint": soft_hint,
         "message": _get_transition_text(Stage.QUESTIONED, star_id, profile, nodes_lit=bool(new_nodes)),
@@ -612,7 +754,7 @@ async def _chat_quiz(req, session, sp, profile, star_id, science_prompt, culture
             "你是初中天文出题老师，只输出 JSON。",
             max_tokens=600,
         )
-        data = json.loads(result.strip())
+        data = json.loads(_strip_code_fence(result))
         quiz = data.get("quiz", [])[:3]
         # 校验结构
         valid = []
@@ -660,7 +802,7 @@ async def chat(req: ChatRequest):
     if not session:
         session = store.create()
 
-    api_key = req.api_key if req.api_key else config.LLM_API_KEY
+    api_key = config.LLM_API_KEY
     star_id = req.star_id
 
     if not star_id:
@@ -675,15 +817,23 @@ async def chat(req: ChatRequest):
 
     science_ctx, culture_ctx, _ = _get_star_context(star_id)
 
-    # 注入知识库上下文（仅文化）
-    kb_results = search_knowledge(req.content) if req.content else []
+    # 注入知识库上下文（仅文化）：原典按星名索引，所以检索词取当前星名 + 别名 + 提问
+    kb_terms = []
+    if profile:
+        kb_terms += [profile.get("name_cn"), profile.get("name_en")]
+        kb_terms += profile.get("aliases") or []
+    kb_terms.append(req.content)
+    kb_results = search_knowledge([t for t in kb_terms if t])
     kb_context = ""
     if kb_results:
-        kb_context = "\n[提供的参考古籍文献]：\n"
+        kb_context = "\n[可引用的原典，引用时务必带上出处]：\n"
         for r in kb_results:
-            source = r.get("source", {})
-            text = source.get("text") or source.get("content") or str(source)
-            kb_context += f"- {text[:60]}...\n"
+            source = r.get("source") or {}
+            text = (source.get("text") or source.get("content") or "").strip()
+            if not text:
+                continue
+            cite = "·".join(x for x in (source.get("dynasty"), source.get("author"), source.get("title") or source.get("name")) if x)
+            kb_context += f"- 《{cite}》：{text}\n"
 
     # 构建提示词
     if profile:

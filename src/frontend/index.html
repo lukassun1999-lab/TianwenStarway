@@ -694,84 +694,6 @@
             transform: translateY(0);
         }
 
-        .observe-direction {
-            position: absolute;
-            transform: translateX(-50%);
-            color: rgba(138, 184, 255, 0.85);
-            font-size: 0.78rem;
-            letter-spacing: 1px;
-            text-shadow: 0 0 10px rgba(74, 158, 255, 0.6), 0 0 2px rgba(0, 0, 0, 0.9);
-            pointer-events: none;
-            white-space: nowrap;
-        }
-        .observe-direction.observe-cur {
-            color: #fff;
-            font-weight: 700;
-            text-shadow: 0 0 12px rgba(255, 215, 0, 0.9);
-        }
-        #observe-compass {
-            position: absolute;
-            bottom: 14px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 40%;
-            height: 34px;
-            z-index: 6;
-            pointer-events: none;
-            background: linear-gradient(90deg, transparent, rgba(10, 14, 28, 0.65) 20%, rgba(10, 14, 28, 0.65) 80%, transparent);
-            border-radius: 18px;
-            border: 1px solid rgba(138, 184, 255, 0.2);
-        }
-
-        /* 地面观星设置面板 */
-        #observe-settings {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 20;
-            width: 230px;
-            padding: 14px 16px;
-            border-radius: var(--r-lg, 12px);
-            border: 1px solid var(--line-culture, rgba(255,215,0,0.35));
-            background: rgba(10, 12, 24, 0.92);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-            backdrop-filter: blur(6px);
-        }
-        .tonight-panel-head {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: var(--culture, #ffd700);
-            margin-bottom: 10px;
-        }
-        .tonight-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            margin-bottom: 10px;
-            font-size: 0.78rem;
-            color: var(--text-dim, rgba(255,255,255,0.6));
-        }
-        .tonight-field input,
-        .tonight-field select {
-            width: 100%;
-            padding: 6px 8px;
-            border-radius: 6px;
-            border: 1px solid var(--line, rgba(255,255,255,0.15));
-            background: rgba(255,255,255,0.06);
-            color: var(--text-hi, #fff);
-            font-size: 0.85rem;
-        }
-        .tonight-panel-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 4px;
-        }
-        .tonight-panel-actions .btn {
-            flex: 1;
-            padding: 7px 10px;
-            font-size: 0.82rem;
-        }
-
         /* 顶部工具栏：操作居左 / 频道居中 / 徽章居右 */
         .map-top-bar {
             position: absolute;
@@ -1200,11 +1122,6 @@
             gap: 10px;
             justify-content: center;
             flex-wrap: wrap;
-        }
-        .save-confirm-text {
-            color: var(--success);
-            font-size: 0.9rem;
-            margin-top: 10px;
         }
 
         .message-card.loading-card,
@@ -2460,7 +2377,6 @@
             <div class="map-top-bar">
                 <div class="map-actions">
                     <button type="button" id="view-toggle-btn" class="map-pill" title="切换二维星图/三维星空" aria-pressed="false">🌌 3D星空</button>
-                    <button type="button" id="observe-btn" class="map-pill" title="地面观星：从地球某地的视角看天空" style="display:none">🔭 地面观星</button>
                     <button type="button" id="hemisphere-btn" class="map-pill" title="切换北天极/南天极视图（仅二维星图）" style="display:none">⬆ 北天极</button>
                     <button type="button" id="label-toggle-btn" class="map-pill" title="显示/隐藏名称" aria-pressed="true">🏷️ 标签</button>
                     <button type="button" id="panorama-btn" class="map-pill" title="全景观星">🔭 全景</button>
@@ -2477,28 +2393,6 @@
             </div>
             <div id="channel-banner" class="channel-banner science">✦ 科学官 · 开普勒的视角</div>
             <div id="canvas-container" aria-label="三维星图"></div>
-            <div id="observe-compass" aria-hidden="true" style="display:none"></div>
-            <div id="observe-settings" role="dialog" aria-label="地面观星设置" style="display:none">
-                <div class="tonight-panel-head">🔭 地面观星 · 选择观星地点</div>
-                <label class="tonight-field">
-                    <span>观星场景（纬度带）</span>
-                    <select id="observe-site"></select>
-                </label>
-                <div class="tonight-field" id="observe-site-desc" style="font-size:0.74rem;color:var(--text-dim);margin-top:-4px;"></div>
-                <label class="tonight-field">
-                    <span>纬度微调（-90° ~ 90°）</span>
-                    <input type="range" id="observe-lat" min="-90" max="90" step="0.1">
-                    <span id="observe-lat-val" style="font-size:0.74rem;color:var(--culture);"></span>
-                </label>
-                <label class="tonight-field">
-                    <span>视场（人眼视野，30° ~ 80°）</span>
-                    <input type="range" id="observe-fov" min="30" max="80" step="1">
-                    <span id="observe-fov-val" style="font-size:0.74rem;color:var(--culture);"></span>
-                </label>
-                <div class="tonight-panel-actions">
-                    <button type="button" id="observe-apply" class="btn btn-science">开始观星</button>
-                </div>
-            </div>
             <div id="bipolar-control">
                 <span id="bipolar-science-label" class="bipolar-label science-side">🔬 科学</span>
                 <input type="range" id="bipolar-slider" min="0" max="100" value="50" aria-label="科学与星象平衡罗盘">
@@ -2555,7 +2449,6 @@
         </div>
     </div>
 
-    <script src="js/marked.min.js"></script>
     <script type="importmap">
     {
         "imports": {

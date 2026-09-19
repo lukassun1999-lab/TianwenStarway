@@ -117,15 +117,21 @@ async def text_to_speech(request: Request):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"语音合成服务异常: {str(e)[:100]}")
 
-    data = resp.json()
-    hex_audio = data.get("data", {}).get("audio", "")
+    try:
+        data = resp.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail=f"语音合成服务返回了非 JSON 内容（HTTP {resp.status_code}）")
+    hex_audio = (data.get("data") or {}).get("audio") or ""
     if not hex_audio:
-        err_code = data.get("base_resp", {}).get("status_code")
+        err_code = (data.get("base_resp") or {}).get("status_code")
         raise HTTPException(
             status_code=502,
             detail=f"语音合成失败（{'额度/密钥错误 ' + str(err_code) if err_code else f'HTTP {resp.status_code}'}），请检查配置后重试",
         )
 
     import binascii, base64
-    audio_bytes = binascii.unhexlify(hex_audio.strip())
+    try:
+        audio_bytes = binascii.unhexlify(hex_audio.strip())
+    except binascii.Error:
+        raise HTTPException(status_code=502, detail="语音合成返回的音频数据无法解析，请稍后重试")
     return {"audio_base64": base64.b64encode(audio_bytes).decode()}

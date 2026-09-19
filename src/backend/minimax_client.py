@@ -7,9 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import MINIMAX_MODEL
-
-MINIMAX_URL = "https://api.minimaxi.com/anthropic/v1/messages"
+from config import MINIMAX_MODEL, MINIMAX_URL
 
 
 class LLMError(Exception):
@@ -22,7 +20,7 @@ _QUOTA_ERROR_CODES = {1008, 2056}
 # 业务错误码 → 用户可读提示
 _ERROR_CODE_MESSAGES = {
     1008: "AI 服务账户余额不足（1008），请前往 MiniMax 控制台充值后重试。",
-    2056: "AI 服务用量额度已达上限（2056，Token Plan 额度或积分已用尽），请升级套餐、购买积分，或在控制台切换为按量计费后重试。",
+    2056: "AI 服务用量额度已达上限（2056，Token Plan 套餐额度用尽）。套餐额度不会回落到钱包余额，请升级套餐、购买积分，或改用开放平台的按量计费 API key。",
 }
 
 
@@ -91,14 +89,33 @@ def _friendly_error(status_code: int = 0, body: str = "", network: bool = False)
 
 
 def _extract_text_from_minimax(result: dict) -> str:
-    """从 MiniMax Anthropic 兼容响应中提取 text。
+    """提取最终回答文本，两种端点的响应结构都兼容：
 
-    MiniMax-M2.7 自 2026-08 起默认输出 `thinking` blocks（占 token 但不是最终答案），
-    此函数只收集 `type == "text"` 的 blocks；若全部是 thinking 则返回空字符串。"""
-    blocks = result.get("content", []) if isinstance(result, dict) else []
-    if not isinstance(blocks, list):
+    Anthropic 兼容端点 → `content[]`，其中 `thinking` block 占 token 但不是答案，
+    只收 `type == "text"` 的（MiniMax-M2.7 自 2026-08 起默认先输出一段 thinking）；
+    OpenAI 兼容端点 → `choices[0].message.content`。
+    都取不到就返回空串，由调用方决定重试还是报错。"""
+    if not isinstance(result, dict):
         return ""
-    return "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+    blocks = result.get("content")
+    if isinstance(blocks, list):
+        return "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+    choices = result.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        return (choices[0].get("message") or {}).get("content") or ""
+    return ""
+
+
+def _hit_token_limit(result: dict) -> bool:
+    """输出是被 max_tokens 截断的（两种端点字段名不同）。"""
+    if not isinstance(result, dict):
+        return False
+    if result.get("stop_reason") == "max_tokens":
+        return True
+    choices = result.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        return choices[0].get("finish_reason") == "length"
+    return False
 
 
 async def call_minimax_direct(messages, api_key, system_prompt, max_tokens=4096):
@@ -139,8 +156,13 @@ async def call_minimax_direct(messages, api_key, system_prompt, max_tokens=4096)
                     text = _extract_text_from_minimax(result)
                     if text:
                         return text
+                    # 老端点会把配额类错误包成 HTTP 200 + choices:null，只在 base_resp 里露码；
+                    # 不先判这一步，"额度用尽"会被当成"只有思考块"白重试三轮、还报错误原因。
+                    err_code = _extract_error_code(resp.text)
+                    if err_code in _ERROR_CODE_MESSAGES:
+                        raise LLMError(_ERROR_CODE_MESSAGES[err_code])
                     # 只有 thinking 没 text：模型把预算耗在思考上
-                    if result.get("stop_reason") == "max_tokens":
+                    if _hit_token_limit(result):
                         # 追加"直接给最终答案"重新请求（不再产生新 thinking，直接输出 text）
                         retry_msgs = list(full_messages) + [
                             {"role": "assistant", "content": "[思考过程已结束]"},
