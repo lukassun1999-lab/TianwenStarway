@@ -1220,6 +1220,73 @@
             flex-wrap: wrap;
         }
 
+        /* ---- 星辰启示录：收起 / 展开 ----
+           默认收起：只留标题 + 星名 + 共鸣首句，缓解聊天区拥挤。
+           展开：解除所有内部滚动与限高，交由整页滚动呈现全文。 */
+        .archive-body {
+            /* 收起态限高可被设计令牌调节；展开态整条规则被 .expanded 覆盖 */
+            max-height: var(--archive-collapsed-h, 300px);
+        }
+        /* 收起时隐藏首段之外的正文。只有内容确实超高时，JS 才会加上 .collapsed，
+           因此不会出现"内容被藏起来、又没有任何按钮可点"的死角。 */
+        .archive-card.collapsed .archive-body > *:nth-child(n+2) { display: none; }
+        .archive-card.collapsed .archive-body { overflow: hidden; }
+
+        .archive-toggle {
+            display: block;
+            margin: 10px auto 2px;
+            padding: 6px 18px;
+            border-radius: var(--r-pill);
+            border: 1px solid var(--line-culture);
+            background: rgba(255, 215, 0, 0.08);
+            color: var(--culture);
+            font-size: 0.82rem;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+            transition: background var(--dur-2) var(--ease-out),
+                        border-color var(--dur-2) var(--ease-out);
+        }
+        .archive-toggle:hover { background: rgba(255, 215, 0, 0.18); border-color: var(--culture); }
+        .archive-toggle:focus-visible { outline: 2px solid var(--culture); outline-offset: 2px; }
+        .archive-toggle .at-caret {
+            display: inline-block;
+            margin-left: 6px;
+            transition: transform var(--dur-2) var(--ease-out);
+        }
+        .archive-card.expanded .archive-toggle .at-caret { transform: rotate(180deg); }
+        /* 展开态：按钮升到卡片顶端吸附，长文滚动时随时可收起 */
+        .archive-card.expanded .archive-toggle {
+            position: sticky;
+            top: -22px;
+            z-index: 2;
+            margin-top: -6px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        /* ---- 展开态解除外层约束，让内容撑开并交给整页滚动 ---- */
+        body.archive-expanded { overflow-y: auto; height: auto; min-height: 100vh; }
+        /* 收起态下 1fr 行会被锁在视口高度内，展开时改用 auto 才允许内容撑高 */
+        body.archive-expanded #app {
+            height: auto;
+            min-height: 100vh;
+            grid-template-rows: minmax(0, auto) auto;
+        }
+        body.archive-expanded #chat-panel {
+            max-height: none;
+            overflow: visible;
+        }
+        body.archive-expanded #chat-messages {
+            overflow: visible;
+            min-height: 0;
+        }
+        body.archive-expanded .archive-body {
+            max-height: none;
+            overflow: visible;
+        }
+        /* 展开可能是从页面中部触发的，给卡片留出吸顶按钮的空间 */
+        .archive-card { scroll-margin-top: 16px; }
+
         .message-card.loading-card,
         .message-card.error-card {
             display: flex;
@@ -2596,8 +2663,8 @@
         }
     }
     </script>
-    <script type="module" src="js/starfield-intro.js?v=6844ba9d"></script>
-    <script type="module" src="js/app.js?v=6844ba9d"></script>
+    <script type="module" src="js/starfield-intro.js?v=696f95da"></script>
+    <script type="module" src="js/app.js?v=696f95da"></script>
     <script>
     // 开场流程：星空封面（自动 18 秒，可点击提前）→ 视频 → 进入系统
     (function () {

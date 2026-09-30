@@ -3277,6 +3277,7 @@ function showResonance(text) {
     // 融合总结是总结性话语：去除「追问：」标记，不显示追问
     text = extractFollowUp(text).text;
     const container = document.getElementById('chat-messages');
+    resetArchiveExpanded();
     container.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'message-card resonance-card track-classic';
@@ -3358,6 +3359,82 @@ function showFinalArchive(data) {
         bodyEl.appendChild(meta);
     }
     container.appendChild(div);
+    setupArchiveToggle(div);
+}
+
+/**
+ * 星辰启示录的收起/展开。
+ * 默认收起，只留标题与首段，缓解聊天区拥挤。
+ *
+ * 判定顺序很重要：必须先在**完整内容**下测量自然高度，再决定是否收起。
+ * 若先收起再测量，scrollHeight 只会量到被隐藏后剩下的那一段，"是否需要展开
+ * 按钮"的判断恒为假——按钮和内容会一起消失，用户什么也点不到（实测踩过）。
+ */
+function setupArchiveToggle(card) {
+    if (!card) return;
+    const bodyEl = card.querySelector('.archive-body');
+    if (!bodyEl) return;
+
+    // 重置到干净状态：不收起、不展开、外层滚动锁定
+    card.classList.remove('collapsed', 'expanded');
+    document.body.classList.remove('archive-expanded');
+
+    const limit = (function () {
+        const v = getComputedStyle(card).getPropertyValue('--archive-collapsed-h').trim();
+        const n = parseFloat(v);
+        return isNaN(n) ? 300 : n;
+    })();
+
+    // 此刻内容完整可见，量到的就是自然高度
+    const naturalHeight = bodyEl.scrollHeight;
+
+    if (naturalHeight <= limit + 8) {
+        // 内容本就不高：保持展开外观，不插入按钮，避免"点了没反应"的无用箭头。
+        // 内容完整可见，因此即使脚本异常也不会丢失信息。
+        return;
+    }
+
+    // 确认需要收起，才加上折叠态
+    card.classList.add('collapsed');
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'archive-toggle';
+    btn.innerHTML = '<span class="at-label">展开全文</span><span class="at-caret">▾</span>';
+    btn.setAttribute('aria-expanded', 'false');
+    if (!bodyEl.id) bodyEl.id = 'archive-body';
+    btn.setAttribute('aria-controls', bodyEl.id);
+    btn.addEventListener('click', function () { toggleArchive(card); });
+    card.insertBefore(btn, bodyEl);
+}
+
+/** 切换单张启示录的展开态。展开时解除外层约束，让内容撑开并交给整页滚动。 */
+function toggleArchive(card) {
+    if (!card) return;
+    const expanded = !card.classList.contains('expanded');
+    card.classList.toggle('expanded', expanded);
+    card.classList.toggle('collapsed', !expanded);
+    // 由外层滚动接管；收起时恢复原本的 100vh + overflow:hidden
+    document.body.classList.toggle('archive-expanded', expanded);
+
+    const btn = card.querySelector('.archive-toggle');
+    if (btn) {
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        btn.querySelector('.at-label').textContent = expanded ? '收起' : '展开全文';
+    }
+    // 展开瞬间卡片可能位于视口外，滚到卡片顶部，吸顶按钮因此可见
+    if (expanded) {
+        const target = card;
+        requestAnimationFrame(function () {
+            try { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+            catch (e) { target.scrollIntoView(); }
+        });
+    }
+}
+
+/** 退出启示录相关视图时清掉展开态，避免 body 停留在 unlock 滚动状态 */
+function resetArchiveExpanded() {
+    document.body.classList.remove('archive-expanded');
 }
 
 // 将文本分割成段落
@@ -3370,6 +3447,7 @@ function splitParagraphs(text) {
 
 function showMessagesWithTypewriter(science, culture) {
     const container = document.getElementById('chat-messages');
+    resetArchiveExpanded();
     container.innerHTML = '';
 
     // 逐屏打字机对前庭敏感用户不友好；系统要求减弱动效时直接整段呈现
@@ -3957,6 +4035,7 @@ function showNextHint(callback) {
 
 function showMessages(science, culture) {
     const container = document.getElementById('chat-messages');
+    resetArchiveExpanded();
     container.innerHTML = '';
 
     const sci = extractFollowUp(science);
@@ -3984,6 +4063,8 @@ function showMessages(science, culture) {
 function renderWelcomeCard(agentName, text) {
     const container = document.getElementById('chat-messages');
     if (!container) return;
+    // 离开启示录视图：清掉展开态，否则 body 会停留在解锁滚动的状态
+    resetArchiveExpanded();
     container.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'message-card culture track-classic';
@@ -4036,6 +4117,7 @@ window.continueExploring = function() {
 
 function showLoading() {
     const container = document.getElementById('chat-messages');
+    resetArchiveExpanded();
     container.innerHTML = '';
     const loading = document.createElement('div');
     loading.className = 'message-card loading-card';
@@ -4052,6 +4134,7 @@ function hideLoading() {
 
 function showError(msg) {
     const container = document.getElementById('chat-messages');
+    resetArchiveExpanded();
     container.innerHTML = '';
     const div = document.createElement('div');
     div.className = 'message-card error-card';
@@ -4701,5 +4784,9 @@ window.__debugText = {
     markClassicSpans: markClassicSpans,
     highlightToHtml: highlightToHtml,
     escapeHtml: escapeHtml,
+    // 启示录收起/展开的验收需要走真实渲染路径，避免测试脚本另写一份
+    showFinalArchive: showFinalArchive,
+    setupArchiveToggle: setupArchiveToggle,
+    toggleArchive: toggleArchive,
 };
 
