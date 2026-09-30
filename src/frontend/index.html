@@ -77,6 +77,26 @@
                        "Source Han Sans SC", "Noto Sans CJK SC", system-ui,
                        -apple-system, "Segoe UI", Roboto, sans-serif;
             --font-mono: "JetBrains Mono", "Courier New", Consolas, monospace;
+            /* 原典轨：诗文、古籍、书名号用衬线。刻意把 "Microsoft YaHei" 排在
+               SimSun 之前，避免 Windows 上落到点阵感很强的旧中易宋体。 */
+            --font-classic: "Songti SC", "STSong", "Source Han Serif SC",
+                            "Noto Serif CJK SC", "Source Han Serif", "SimSun",
+                            "Microsoft YaHei", Georgia, serif;
+
+            /* ---- 文字度量（双轨） ----
+               科学轨 = 无衬线 + 紧字距 + 舒适行高，靠层级与度量做"高级科技感"；
+               原典轨 = 衬线 + 宽字距 + 更松行高，做"古典韵味"。
+               行长用 em 约束：中文全角字的字宽 ≈ 1em，所以 34em 即每行约 34 字，
+               与字型无关（用 ch 会随字体在 0.5~1em 之间漂移，不可靠）。 */
+            --measure-prose: 34em;         /* 正文：每行约 34 字，舒适区 */
+            --measure-classic: 28em;       /* 原典：更短，便于断句 */
+            --size-prose: 1.04rem;         /* 正文 */
+            --size-classic: 1.06rem;       /* 原典，略大以衬线更易读 */
+            --size-label: 0.94rem;         /* 星名 / 书名 */
+            --lh-prose: 1.85;
+            --lh-classic: 2.05;
+            --ls-prose: 0.012em;           /* 正文极轻的正字距，中文更透气 */
+            --ls-classic: 0.06em;          /* 原典明显放宽，有碑帖气 */
 
             /* ---- 层级 ---- */
             --z-labels: 5;
@@ -1040,14 +1060,69 @@
             overflow-y: auto;
             position: relative;
         }
-        .message-card .content {
-            font-size: 1.04rem;
-            line-height: 1.9;
-            color: var(--text);
-            white-space: pre-wrap;
-            overflow-wrap: break-word;
+        /* 打字机预排版：内容容器内的隐形副本撑住最终高度，
+           使逐字揭示期间行宽不再变化、下方按钮不跳动。 */
+        .message-card .typewriter-ghost {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            visibility: hidden;
+            pointer-events: none;
+            user-select: none;
         }
-        .message-card .content p { margin: 0 0 0.9em 0; }
+        /* ---- 正文排版（双轨共用的骨架） ----
+           white-space 用 normal（不再用 pre-wrap）：段落由 renderTextBlock 生成 <p>，
+           换行靠块级间距表达。原来 pre-wrap 保留换行 + p 自带外边距会叠加成双倍间距。 */
+        .message-card .content {
+            /* flow-root 而非 block：同样是块级并建立 BFC、隔离段落外边距，
+               同时保留 .loading-inline 覆盖 display 的余地（见下方 .loading-inline）。 */
+            display: flow-root;
+            font-family: var(--font-ui);
+            font-size: var(--size-prose);
+            line-height: var(--lh-prose);
+            letter-spacing: var(--ls-prose);
+            color: var(--text);
+            overflow-wrap: break-word;
+            /* 中文标点挤压与合理的换行，减少行尾空洞 */
+            text-wrap: pretty;
+        }
+        .message-card .content p {
+            margin: 0 0 0.75em 0;
+            max-width: var(--measure-prose);
+        }
+        .message-card .content > *:last-child { margin-bottom: 0; }
+        /* 引号内的原典与书名号：局部切到衬线轨，即使在同一段回答里也能区分开 */
+        .classic-quote {
+            font-family: var(--font-classic);
+            font-size: var(--size-classic);
+            line-height: var(--lh-classic);
+            letter-spacing: var(--ls-classic);
+            color: #ffe9b0;
+        }
+        .classic-title {
+            font-family: var(--font-classic);
+            letter-spacing: 0.04em;
+            color: #ffe0a0;
+            font-style: normal;
+        }
+        /* ---- 科学轨：无衬线 + 紧字距 + 等宽数字，靠度量而非装饰做科技感 ---- */
+        .track-science .content {
+            font-family: var(--font-ui);
+            letter-spacing: 0.006em;
+            font-variant-numeric: tabular-nums;
+        }
+        .track-science .content p { max-width: var(--measure-prose); }
+        /* ---- 原典轨：衬线 + 宽字距 + 更松行高 ---- */
+        .track-classic .content {
+            font-family: var(--font-classic);
+            font-size: var(--size-classic);
+            line-height: var(--lh-classic);
+            letter-spacing: var(--ls-classic);
+            color: #f0ead9;
+        }
+        .track-classic .content p { max-width: var(--measure-classic); }
+        .track-classic .content .classic-quote { color: #ffedc2; }
         .message-card .content h1,
         .message-card .content h2,
         .message-card .content h3 {
@@ -1114,6 +1189,27 @@
             max-height: 300px;
             overflow-y: auto;
         }
+        /* 启示录是双轨融合场景：正文段落居中、按 30ch 收窄，长句不横跨整屏 */
+        .archive-card .content p {
+            max-width: var(--measure-classic);
+            margin: 0 auto 0.7em auto;
+            text-align: center;
+        }
+        .archive-card .content p.archive-star { margin-bottom: 0.9em; }
+        .archive-star strong { font-size: 1.1rem; letter-spacing: 0.06em; }
+        .archive-resonance {
+            font-family: var(--font-classic);
+            letter-spacing: var(--ls-classic);
+            line-height: var(--lh-classic);
+            color: rgba(255, 215, 0, 0.82);
+        }
+        .archive-note {
+            margin-top: 1.2em !important;
+            color: var(--text-dim);
+        }
+        .archive-note-line { color: var(--text-dim); }
+        .archive-meta { margin-top: 0.6em; font-size: 0.85rem; color: var(--text-dim); }
+        .archive-meta p { margin: 0 0 0.35em 0; }
         .archive-actions {
             margin-top: 18px;
             padding-top: 15px;
@@ -1140,6 +1236,10 @@
         }
         .message-card.error-card .agent { color: var(--danger); }
 
+        /* 加载态：本规则必须压过 .message-card .content 的 display。
+           两者都命中同一个元素（loading 卡里 .content.loading-inline 是同一个 div），
+           .message-card .content 特异性为 (0,2,0)，所以这里补足到 (0,3,0) 才生效。 */
+        .message-card .content.loading-inline,
         .loading-inline {
             display: inline-flex;
             align-items: center;
@@ -1271,11 +1371,44 @@
         }
 
         #dialogue-content {
-            font-size: 1.1rem;
-            line-height: 1.85;
+            font-family: var(--font-ui);
+            font-size: var(--size-prose);
+            line-height: var(--lh-prose);
+            letter-spacing: var(--ls-prose);
             color: rgba(255, 255, 255, 0.92);
             min-height: 2em;
+            overflow-wrap: break-word;
+            text-wrap: pretty;
         }
+        #dialogue-content p {
+            margin: 0 0 0.75em 0;
+            max-width: var(--measure-prose);
+        }
+        #dialogue-content p:last-child { margin-bottom: 0; }
+        /* 浮层双轨：卡片类名由 JS 切换（dialogue-card-science / dialogue-card-culture） */
+        .dialogue-card-science #dialogue-content {
+            font-family: var(--font-ui);
+            letter-spacing: 0.006em;
+            font-variant-numeric: tabular-nums;
+        }
+        .dialogue-card-culture #dialogue-content {
+            font-family: var(--font-classic);
+            font-size: var(--size-classic);
+            line-height: var(--lh-classic);
+            letter-spacing: var(--ls-classic);
+            color: #f0ead9;
+        }
+        .dialogue-card-culture #dialogue-content p { max-width: var(--measure-classic); }
+        #dialogue-card .classic-quote,
+        .dialogue-card-culture #dialogue-content .classic-quote {
+            font-family: var(--font-classic);
+            font-size: var(--size-classic);
+            line-height: var(--lh-classic);
+            letter-spacing: var(--ls-classic);
+            color: #ffe9b0;
+        }
+        .dialogue-card-culture #dialogue-content .classic-quote { color: #ffedc2; }
+        #dialogue-card .classic-title { font-family: var(--font-classic); color: #ffe0a0; }
 
         #dialogue-next-hint {
             position: absolute;
@@ -1733,17 +1866,23 @@
         }
         .archive-lib-detail .ald-resonance {
             color: rgba(255, 215, 0, 0.88);
-            font-style: italic;
-            font-size: 0.88rem;
-            line-height: 1.7;
+            font-family: var(--font-classic);
+            letter-spacing: 0.04em;
+            font-size: 0.92rem;
+            line-height: 1.8;
             margin: 0 0 10px;
         }
+        .archive-lib-detail .ald-resonance .ald-p { margin: 0 0 0.5em; }
+        .archive-lib-detail .ald-resonance .ald-p:last-child { margin-bottom: 0; }
         .archive-lib-detail .ald-note {
             color: rgba(255, 255, 255, 0.88);
             font-size: 0.88rem;
-            line-height: 1.7;
+            line-height: 1.75;
             margin: 0 0 6px;
         }
+        .archive-lib-detail .ald-note .ald-p { margin: 0 0 0.4em; }
+        .archive-lib-detail .ald-note .ald-p:last-child { margin-bottom: 0; }
+        .archive-lib-detail .ald-note-label { color: var(--text-faint); }
         .archive-lib-detail .ald-stats,
         .archive-lib-detail .ald-quiz {
             color: var(--text-dim);
@@ -2457,8 +2596,8 @@
         }
     }
     </script>
-    <script type="module" src="js/starfield-intro.js?v=89ca96a1"></script>
-    <script type="module" src="js/app.js?v=89ca96a1"></script>
+    <script type="module" src="js/starfield-intro.js?v=6844ba9d"></script>
+    <script type="module" src="js/app.js?v=6844ba9d"></script>
     <script>
     // 开场流程：星空封面（自动 18 秒，可点击提前）→ 视频 → 进入系统
     (function () {

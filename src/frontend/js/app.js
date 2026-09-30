@@ -586,11 +586,26 @@ function showAchievementPanel() {
                 .map(([k, v]) => `${({ fact: '科学', culture: '文化', compare: '对比' })[k] || k}问题 ${v} 个`)
                 .join('、');
             detail.innerHTML = `
-                <p class="ald-resonance">${nl2br(a.resonance)}</p>
-                <p class="ald-note">我的感悟：${nl2br(a.personal_note)}</p>
+                <div class="ald-resonance"></div>
+                <div class="ald-note"><span class="ald-note-label">我的感悟：</span></div>
                 ${statsHtml ? `<p class="ald-stats">这次旅程，你追问了 ${statsHtml}</p>` : ''}
                 ${a.quiz ? `<p class="ald-quiz">星空小测验：答对 ${a.quiz.score}/${a.quiz.total}</p>` : ''}
             `;
+            // 与启示录卡一致：走段落模型，共鸣段用原典轨（衬线），不再用 nl2br
+            const resEl = detail.querySelector('.ald-resonance');
+            const noteEl = detail.querySelector('.ald-note');
+            const resFrag = document.createDocumentFragment();
+            renderTextBlock(resFrag, a.resonance, { highlight: true });
+            Array.prototype.slice.call(resFrag.children).forEach(function (c) {
+                c.className = 'ald-p';
+                resEl.appendChild(c);
+            });
+            const noteFrag = document.createDocumentFragment();
+            renderTextBlock(noteFrag, a.personal_note || '', { highlight: false });
+            Array.prototype.slice.call(noteFrag.children).forEach(function (c) {
+                c.className = 'ald-p ald-p-note';
+                noteEl.appendChild(c);
+            });
             item.appendChild(detail);
         }
     });
@@ -3264,8 +3279,9 @@ function showResonance(text) {
     const container = document.getElementById('chat-messages');
     container.innerHTML = '';
     const card = document.createElement('div');
-    card.className = 'message-card resonance-card';
-    card.innerHTML = `<div class="agent" style="color:var(--culture)">星辰共鸣</div><div class="content-wrapper"><div class="content">${nl2br(text)}</div></div>`;
+    card.className = 'message-card resonance-card track-classic';
+    card.innerHTML = `<div class="agent" style="color:var(--culture)">星辰共鸣</div><div class="content-wrapper"><div class="content"></div></div>`;
+    renderTextBlock(card.querySelector('.content'), text, { highlight: true });
     container.appendChild(card);
 }
 
@@ -3304,18 +3320,43 @@ function showFinalArchive(data) {
         : '';
     div.innerHTML = `
         <div class="archive-title">✧ 星辰启示录 ✧</div>
-        <div class="content archive-body">
-            <p><strong>${escapeHtml(data.star_name)}</strong></p>
-            <p style="color: rgba(255,215,0,0.8); font-style: italic;">${nl2br(resonanceClean)}</p>
-            <p style="margin-top: 15px; color: var(--text-dim);">我的感悟：${nl2br(data.personal_note)}</p>
-            ${statsHtml}
-            ${quizScoreHtml}
-        </div>
+        <div class="content archive-body"></div>
         <div class="archive-actions">
             <button onclick="window.closeArchive()" class="btn btn-culture">关闭</button>
             <button onclick="window.continueExploring()" class="btn btn-science">继续探索</button>
         </div>
     `;
+    // 启示录正文走段落模型（不再用 nl2br + pre-wrap，避免段距叠加）。
+    // 结构与顺序与原先一致：星名 → 共鸣（原典轨） → 我的感悟 → 统计 → 成绩。
+    const bodyEl = div.querySelector('.archive-body');
+    const starP = document.createElement('p');
+    starP.className = 'archive-star';
+    starP.innerHTML = '<strong>' + escapeHtml(data.star_name) + '</strong>';
+    bodyEl.appendChild(starP);
+
+    const resonanceP = document.createElement('p');
+    resonanceP.className = 'archive-resonance';
+    resonanceP.innerHTML = highlightToHtml(markClassicSpans(resonanceClean));
+    bodyEl.appendChild(resonanceP);
+
+    const noteP = document.createElement('p');
+    noteP.className = 'archive-note';
+    noteP.appendChild(document.createTextNode('我的感悟：'));
+    bodyEl.appendChild(noteP);
+    // 感悟与上面的段落同级：用 fragment 接住 renderTextBlock 生成的 <p>
+    const noteFrag = document.createDocumentFragment();
+    renderTextBlock(noteFrag, data.personal_note || '', { highlight: false });
+    Array.prototype.slice.call(noteFrag.children).forEach(function (c) {
+        c.className = 'archive-note-line';
+        bodyEl.appendChild(c);
+    });
+
+    if (statsHtml || quizScoreHtml) {
+        const meta = document.createElement('div');
+        meta.className = 'archive-meta';
+        meta.innerHTML = statsHtml + quizScoreHtml;
+        bodyEl.appendChild(meta);
+    }
     container.appendChild(div);
 }
 
@@ -3331,8 +3372,8 @@ function showMessagesWithTypewriter(science, culture) {
     const container = document.getElementById('chat-messages');
     container.innerHTML = '';
 
-    // 测试模式：跳过打字机与继续按钮，直接展示双导师消息并进入后续状态
-    if (window.__testMode === true) {
+    // 逐屏打字机对前庭敏感用户不友好；系统要求减弱动效时直接整段呈现
+    if (window.__testMode === true || prefersReducedMotion()) {
         showMessages(science, culture);
         if (state.phase === 'decision') {
             document.getElementById('chat-status').textContent = '请拖动双极罗盘到中间位置';
@@ -3343,7 +3384,7 @@ function showMessagesWithTypewriter(science, culture) {
     }
 
     const card = document.createElement('div');
-    card.className = 'message-card';
+    card.className = 'message-card track-science';
     card.id = 'active-card';
     card.innerHTML = `
         <div class="agent" id="active-agent"></div>
@@ -3375,7 +3416,7 @@ function showMessagesWithTypewriter(science, culture) {
                 card.style.opacity = '0';
                 setTimeout(() => {
                     document.getElementById('chat-status').textContent = '甘德正在解读...';
-                    card.className = 'message-card culture';
+                    card.className = 'message-card culture track-classic';
                     document.getElementById('active-agent').textContent = '甘德';
                     card.style.opacity = '1';
                     isAnimating = false;
@@ -3664,6 +3705,136 @@ function nl2br(s) {
     return escapeHtml(s).replace(/\n/g, '<br>');
 }
 
+/* ==================== 正文段落模型与双轨排版 ==================== */
+
+/* 局部高亮用哨兵符切分。原典原文里几乎不可能出现 U+0001。 */
+const HL_SENTINEL = '\u0001';
+
+/* 预编译：① 中文/英文引号内的原典片段 ② 书名/篇名号 ③ 直角引号
+   注意：这些正则在**转义之前**的原始文本上运行。若先转义，直引号会变成
+   &quot;，正则就再也匹配不到——而 star_profiles.json 里两种引号都有。 */
+const CLASSIC_PATTERNS = [
+    /[“"]([^”"\n]{2,60})[”"]/g,
+    /《([^》\n]{1,30})》/g,
+    /「([^」\n]{2,60})」/g
+];
+
+/**
+ * 把中文单引号 ‘…’ 与全角引号 ＂ 统一成 “…” 后再匹配。
+ * 语料里确实存在：‘会挽雕弓如满月…’（见 star_profiles.json）。
+ * 加 CJK 校验是为了不误伤英文撇号（don't 不会被当成引文对）。
+ */
+function normalizeQuoteVariants(raw) {
+    let s = String(raw);
+    // 单引号对（U+2018…U+2019 / '）：仅当内容含中日韩文字时才归一
+    s = s.replace(/[\u2018']([^\u2019'\n]{2,60})[\u2019']/g, function (m, inner) {
+        return /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/.test(inner) ? '\u201c' + inner + '\u201d' : m;
+    });
+    // 全角双引号 ＂ → 中文双引号
+    s = s.replace(/\uff02([^\uff02\n]{2,60})\uff02/g, '\u201c$1\u201d');
+    return s;
+}
+
+/**
+ * 在原始文本上标出原典片段，输出**已转义**的字符串。
+ * 引文本身也要转义（否则模型输出的 <img onerror> 会原样落地），
+ * 只有哨兵是可信的结构标记。
+ */
+function markClassicSpans(raw) {
+    let out = normalizeQuoteVariants(raw);
+    CLASSIC_PATTERNS.forEach(function (re) {
+        re.lastIndex = 0;
+        out = out.replace(re, function (m) {
+            return HL_SENTINEL + escapeHtml(m) + HL_SENTINEL;
+        });
+    });
+    // 逐段转义非引文部分：先按哨兵切开，奇数下标是已转义的引文
+    return out.split(HL_SENTINEL).map(function (part, i) {
+        return i % 2 === 1 ? part : escapeHtml(part);
+    }).join(HL_SENTINEL);
+}
+
+/**
+ * 把 markClassicSpans 的输出按哨兵切成 HTML：普通部分走文本轨，
+ * 引文与书名号走衬线轨。输入已全部转义，因此可以安全地走 innerHTML。
+ */
+function highlightToHtml(escaped) {
+    if (escaped.indexOf(HL_SENTINEL) === -1) return escaped;
+    return escaped.split(HL_SENTINEL).map(function (part, i) {
+        if (i % 2 === 0) return part;                 // 文字轨
+        if (/^《[^》]*》$/.test(part)) {
+            return '<span class="classic-title">' + part + '</span>';
+        }
+        return '<span class="classic-quote">' + part + '</span>';
+    }).join('');
+}
+
+/**
+ * 文本规整成段落数组。
+ * 空行切段；段内单换行与连续空白折叠为空格——避免模型输出的半角换行
+ * 被当成硬换行、进而与段落间距叠加成双倍空白。
+ */
+function normalizeParagraphs(text) {
+    if (!text) return [];
+    return String(text)
+        .replace(/\r\n?/g, '\n')
+        .split(/\n\s*\n+/)
+        .map(function (p) { return p.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim(); })
+        .filter(Boolean);
+}
+
+/**
+ * 渲染双轨正文。highlight=true 时把引文/书名号切到衬线轨。
+ * 用 <p> 承载段落，换行交给块级间距，不再依赖 white-space: pre-wrap。
+ * 容器可以是元素，也可以是 DocumentFragment。
+ */
+function renderTextBlock(container, text, opts) {
+    opts = opts || {};
+    if (!container) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+    const paras = normalizeParagraphs(text);
+    if (!paras.length) return;
+    const frag = document.createDocumentFragment();
+    paras.forEach(function (para) {
+        const p = document.createElement('p');
+        if (opts.highlight) {
+            p.innerHTML = highlightToHtml(markClassicSpans(para));
+        } else {
+            p.textContent = para;
+        }
+        frag.appendChild(p);
+    });
+    container.appendChild(frag);
+}
+
+/* 是否要求减弱动效：此时跳过逐字打字机，直接整段揭示 */
+function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+/** 移除打字机留下的隐形测量块 */
+function clearTypewriterGhost() {
+    document.querySelectorAll('.typewriter-ghost').forEach(function (el) { el.remove(); });
+}
+
+/**
+ * 在消息卡里放一块隐形的"最终版面"，先把容器撑到最终高度。
+ * 逐字揭示期间行宽因此不再变化，下方按钮与滚动位置不会跳动。
+ * 浮层（#dialogue-content）的卡片高度本身是弹性的，无需冻结，直接跳过。
+ */
+function syncTypewriterGhost(contentEl, fullText) {
+    if (!contentEl || contentEl.id === 'dialogue-content') return;
+    const wrapper = contentEl.closest ? contentEl.closest('.content-wrapper') : null;
+    if (!wrapper) return;
+    clearTypewriterGhost();
+    const ghost = document.createElement('div');
+    ghost.className = 'typewriter-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    // 只测量、不显示：字体与度量随当前轨的类名自动继承
+    ghost.textContent = String(fullText || '');
+    wrapper.appendChild(ghost);
+}
+
 /** 从导师回答文本中提取「追问：xxx」标记，返回 { text, followUp } */
 function extractFollowUp(text) {
     if (!text) return { text: '', followUp: null };
@@ -3702,10 +3873,38 @@ function renderFollowUpButton(container, followUp) {
     container.appendChild(btn);
 }
 
+/**
+ * 打字机结束/跳过时统一收尾：清掉光标与隐形测量块，再把整段按双轨段落模型渲染。
+ * 逐字过程走 textContent（安全、且光标是独立节点），只有收尾这一次才切到段落 DOM。
+ */
+function finalizeTypewriter(contentEl) {
+    if (!contentEl) return;
+    const full = typewriterState.fullText || '';
+    const track = typewriterState.currentCard === 'culture' ? 'classic' : 'science';
+    clearTypewriterGhost();
+    const cursor = contentEl.querySelector('.cursor');
+    if (cursor) cursor.remove();
+    renderTextBlock(contentEl, full, { highlight: track === 'classic' });
+}
+
 function startTypewriter() {
     const contentElId = typewriterState.contentElId || 'active-content';
     const contentEl = document.getElementById(contentElId);
     if (!contentEl) return;
+
+    // 减弱动效：不逐字揭示，直接整段呈现
+    if (prefersReducedMotion()) {
+        contentEl.textContent = typewriterState.fullText;
+        typewriterState.displayedText = typewriterState.fullText;
+        typewriterState.charIndex = typewriterState.fullText.length;
+        typewriterState.isTyping = false;
+        finalizeTypewriter(contentEl);
+        if (typewriterState.onComplete) typewriterState.onComplete();
+        return;
+    }
+
+    // 预先用隐形副本撑到最终高度，消除逐字重排导致的布局跳动
+    syncTypewriterGhost(contentEl, typewriterState.fullText);
 
     function typeNext() {
         if (!typewriterState.isTyping) return;
@@ -3722,8 +3921,8 @@ function startTypewriter() {
             typewriterState.timer = setTimeout(typeNext, typewriterState.speed);
         } else {
             // 打字完成
-            contentEl.textContent = typewriterState.displayedText;
             typewriterState.isTyping = false;
+            finalizeTypewriter(contentEl);
             if (typewriterState.onComplete) {
                 typewriterState.onComplete();
             }
@@ -3738,10 +3937,8 @@ function skipTypewriter() {
         clearTimeout(typewriterState.timer);
         const contentElId = typewriterState.contentElId || 'active-content';
         const contentEl = document.getElementById(contentElId);
-        if (contentEl) {
-            contentEl.textContent = typewriterState.fullText;
-        }
         typewriterState.isTyping = false;
+        finalizeTypewriter(contentEl);
         if (typewriterState.onComplete) {
             typewriterState.onComplete();
         }
@@ -3766,12 +3963,14 @@ function showMessages(science, culture) {
     const cul = extractFollowUp(culture);
 
     const scienceDiv = document.createElement('div');
-    scienceDiv.className = 'message-card science';
-    scienceDiv.innerHTML = `<div class="agent">开普勒</div><div class="content-wrapper"><div class="content">${escapeHtml(sci.text)}</div></div>`;
+    scienceDiv.className = 'message-card science track-science';
+    scienceDiv.innerHTML = `<div class="agent">开普勒</div><div class="content-wrapper"><div class="content"></div></div>`;
+    renderTextBlock(scienceDiv.querySelector('.content'), sci.text, { highlight: false });
 
     const cultureDiv = document.createElement('div');
-    cultureDiv.className = 'message-card culture';
-    cultureDiv.innerHTML = `<div class="agent">甘德</div><div class="content-wrapper"><div class="content">${escapeHtml(cul.text)}</div></div>`;
+    cultureDiv.className = 'message-card culture track-classic';
+    cultureDiv.innerHTML = `<div class="agent">甘德</div><div class="content-wrapper"><div class="content"></div></div>`;
+    renderTextBlock(cultureDiv.querySelector('.content'), cul.text, { highlight: true });
 
     container.appendChild(scienceDiv);
     container.appendChild(cultureDiv);
@@ -3780,17 +3979,24 @@ function showMessages(science, culture) {
     renderFollowUpButton(container, cul.followUp || sci.followUp);
 }
 
+/** 渲染身份卡（关闭启示录 / 继续探索时回到的欢迎态），统一走段落模型
+ *  并复用 track--classic 时带上的太史令轨道（原典轨）。 */
+function renderWelcomeCard(agentName, text) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'message-card culture track-classic';
+    card.id = 'welcome-card';
+    card.innerHTML = `<div class="agent"></div><div class="content-wrapper"><div class="content"></div></div>`;
+    card.querySelector('.agent').textContent = agentName;
+    renderTextBlock(card.querySelector('.content'), text, { highlight: false });
+    container.appendChild(card);
+}
+
 window.closeArchive = function() {
     // 关闭启示录：回到星空视图，不重置全部状态，用户可继续观察星空或探索下一颗星
-    const container = document.getElementById('chat-messages');
-    container.innerHTML = `
-        <div class="message-card culture" id="welcome-card">
-            <div class="agent">太史令</div>
-            <div class="content-wrapper">
-                <div class="content">星辰已觉醒，抬头看看星空吧。输入下一颗星辰名称，继续您的探索之旅。</div>
-            </div>
-        </div>
-    `;
+    renderWelcomeCard('太史令', '星辰已觉醒，抬头看看星空吧。输入下一颗星辰名称，继续您的探索之旅。');
     document.getElementById('chat-status').textContent = '星辰已觉醒 · 继续探索下一颗星';
     state.phase = 'welcome';
     state.currentStar = null;
@@ -3799,15 +4005,7 @@ window.closeArchive = function() {
 
 window.continueExploring = function() {
     // 重置UI为初始状态
-    const container = document.getElementById('chat-messages');
-    container.innerHTML = `
-        <div class="message-card culture" id="welcome-card">
-            <div class="agent">甘德</div>
-            <div class="content-wrapper">
-                <div class="content">守夜人，请继续您的探索之旅。输入下一个星辰名称，我将为您讲述古人对它的解读。</div>
-            </div>
-        </div>
-    `;
+    renderWelcomeCard('甘德', '守夜人，请继续您的探索之旅。输入下一个星辰名称，我将为您讲述古人对它的解读。');
     document.getElementById('chat-status').textContent = '等待守夜人的指令...';
 
     // 重置望远镜视角
@@ -4493,3 +4691,15 @@ function finishQuiz() {
     if (statusEl) statusEl.textContent = '测验完成。写下你的感悟，完成觉醒。';
     if (awakenArea) awakenArea.classList.add('visible');
 }
+
+/* ==================== 排版调试导出（与 __debugStage / __debugBgm 同约定） ====================
+   供自动化验收调用真实的渲染链路，避免测试脚本复制一份渲染逻辑。
+   只读用途，不改变任何运行时行为。 */
+window.__debugText = {
+    renderTextBlock: renderTextBlock,
+    normalizeParagraphs: normalizeParagraphs,
+    markClassicSpans: markClassicSpans,
+    highlightToHtml: highlightToHtml,
+    escapeHtml: escapeHtml,
+};
+
