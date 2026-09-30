@@ -14,3 +14,9 @@ __pycache__/
 backend_out.txt
 backend_err.txt
 src/backend/data/sessions/
+
+# ---- 同步工具状态 ----
+# 本目录由主仓 scripts/sync-deploy.ps1 从 src/ 同步生成，请勿直接编辑。
+# 状态记录实际存放在主仓 .workbuddy/sync-version.txt，此处仅为防御性忽略。
+.sync-version
+.sync-version.*
