@@ -4500,6 +4500,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // 星辰信息卡：收起 / 展开双栏
+    const starInfoToggle = document.getElementById('star-info-toggle');
+    if (starInfoToggle) {
+        starInfoToggle.addEventListener('click', () => {
+            const card = document.getElementById('star-info');
+            if (!card) return;
+            const collapsed = card.classList.toggle('collapsed');
+            starInfoToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            const label = starInfoToggle.querySelector('.sit-label');
+            if (label) label.textContent = collapsed ? '展开' : '收起';
+        });
+    }
+
+
     // Awaken save button
     const awakenSaveBtn = document.getElementById('awaken-save-btn');
     if (awakenSaveBtn) {
@@ -4788,5 +4802,7 @@ window.__debugText = {
     showFinalArchive: showFinalArchive,
     setupArchiveToggle: setupArchiveToggle,
     toggleArchive: toggleArchive,
+    // 星辰信息卡（#star-info）的收起/展开验收
+    showStarInfo: showStarInfo,
 };
 

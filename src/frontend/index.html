@@ -442,8 +442,11 @@
             box-shadow: var(--glow-culture);
         }
 
-        /* ---- 星辰信息卡 ---- */
+        /* ---- 星辰信息卡 ----
+           侧栏本身 overflow-y:auto 承担滚动，卡片不限高，所以收起只需处理
+           视觉密度：把双栏折起，保留星名与阶段，随时可点开。 */
         #star-info {
+            position: relative;
             padding: 16px;
             background: linear-gradient(160deg, rgba(255, 215, 0, 0.07), rgba(255, 215, 0, 0.02));
             border: 1px solid var(--line-culture);
@@ -453,12 +456,43 @@
         }
         #star-info.visible { display: block; }
 
+        /* 头部：星名占满一行，按钮绝对定位在右上，长星名也不会把按钮挤出容器 */
+        .star-info-head { position: relative; }
         #star-info h3 {
             color: var(--culture);
             font-size: 1.08rem;
             letter-spacing: 1px;
             margin-bottom: 6px;
+            padding-right: 62px;
         }
+        .star-info-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: var(--r-pill);
+            border: 1px solid var(--line-culture);
+            background: rgba(255, 215, 0, 0.08);
+            color: var(--culture);
+            font-size: 0.72rem;
+            line-height: 1.5;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background var(--dur-2) var(--ease-out),
+                        border-color var(--dur-2) var(--ease-out);
+        }
+        .star-info-toggle:hover { background: rgba(255, 215, 0, 0.2); border-color: var(--culture); }
+        .star-info-toggle .sit-caret {
+            display: inline-block;
+            transition: transform var(--dur-2) var(--ease-out);
+        }
+        #star-info.collapsed .sit-caret { transform: rotate(-90deg); }
+        /* 收起：只折起双栏；阶段行保留，让用户仍看得见当前进度 */
+        #star-info.collapsed .dual-panels { display: none; }
+        #star-info.collapsed .stage { margin-bottom: 0; }
 
         #star-info .stage {
             font-size: 0.85rem;
@@ -2545,9 +2579,15 @@
             </div>
 
             <div id="star-info" aria-live="polite">
-                <h3 id="star-name">北极星</h3>
+                <div class="star-info-head">
+                    <h3 id="star-name">北极星</h3>
+                    <button type="button" id="star-info-toggle" class="star-info-toggle"
+                            aria-expanded="true" aria-controls="star-info-body">
+                        <span class="sit-label">收起</span><span class="sit-caret" aria-hidden="true">▾</span>
+                    </button>
+                </div>
                 <div class="stage">阶段：<span id="stage-name">尘封</span></div>
-                <div class="dual-panels">
+                <div class="dual-panels" id="star-info-body">
                     <div class="science-panel">
                         <div class="field-label">科学官 · 开普勒</div>
                         <div class="field-value" id="sci-name">-</div>
@@ -2663,8 +2703,8 @@
         }
     }
     </script>
-    <script type="module" src="js/starfield-intro.js?v=696f95da"></script>
-    <script type="module" src="js/app.js?v=696f95da"></script>
+    <script type="module" src="js/starfield-intro.js?v=04f2b702"></script>
+    <script type="module" src="js/app.js?v=04f2b702"></script>
     <script>
     // 开场流程：星空封面（自动 18 秒，可点击提前）→ 视频 → 进入系统
     (function () {
